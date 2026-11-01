@@ -1,0 +1,53 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Dashboard: graphite/navy foundation */
+  --color-canvas: #0a0d13;
+  --color-surface: #10141c;
+  --color-raised: #161b25;
+  --color-line: #222a37;
+  --color-line-strong: #2e3848;
+  --color-fg: #e6e9ef;
+  --color-muted: #8a94a6;
+  --color-faint: #5b6577;
+  --color-accent: #7c8cff;
+  --color-accent-strong: #98a4ff;
+
+  --color-dev: #38bdf8;
+  --color-staging: #fbbf24;
+  --color-prod: #f472b6;
+  --color-on: #34d399;
+  --color-danger: #f87171;
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-slide-up: slide-up 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer base {
+  html { color-scheme: dark; }
+  body { @apply bg-canvas text-fg font-sans antialiased; }
+  ::selection { background: color-mix(in oklab, var(--color-accent) 35%, transparent); }
+}
+
+/* Native select arrows can't be repositioned, so draw the caret ourselves. Unlayered so the
+   padding wins over px-* utilities. Selects with `appearance-none` render their own icon. */
+select:not(.appearance-none) {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378818f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.625rem center;
+  background-size: 0.875rem;
+  padding-right: 2rem;
+}
