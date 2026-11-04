@@ -70,8 +70,10 @@ export const api = {
   updateFlag: (key: string, input: UpdateFlagInput) => request<FlagWithConfigs>(`/flags/${key}`, { method: 'PATCH', body: input }),
   archiveFlag: (key: string) => request<FlagWithConfigs>(`/flags/${key}/archive`, { method: 'POST' }),
   restoreFlag: (key: string) => request<FlagWithConfigs>(`/flags/${key}/restore`, { method: 'POST' }),
-  updateConfig: (key: string, env: Environment, config: EnvironmentConfig, confirmProduction = false) =>
-    request<EnvironmentConfig>(`/flags/${key}/environments/${env}`, { method: 'PUT', body: { config, confirmProduction } }),
+  config: (key: string, env: Environment) => request<EnvironmentConfig>(`/flags/${key}/environments/${env}`),
+  /** `expectedConfig` is the stored config the edit was based on; the API answers 409 CONFLICT if it changed since. */
+  updateConfig: (key: string, env: Environment, config: EnvironmentConfig, expectedConfig: EnvironmentConfig, confirmProduction = false) =>
+    request<EnvironmentConfig>(`/flags/${key}/environments/${env}`, { method: 'PUT', body: { config, expectedConfig, confirmProduction } }),
   previewConfig: (key: string, env: Environment, config: EnvironmentConfig) =>
     request<PreviewResult>(`/flags/${key}/environments/${env}/preview`, { method: 'POST', body: { config } }),
   compare: () => request<EnvironmentComparisonRow[]>('/environments/compare'),
@@ -88,6 +90,6 @@ export const api = {
 
   audit: (filter: { flagKey?: string; environment?: Environment; operation?: AuditOperation; limit?: number } = {}) =>
     request<AuditEntry[]>(`/audit${qs({ ...filter, limit: filter.limit?.toString() })}`),
-  rollback: (id: number, confirmProduction = false) =>
-    request<EnvironmentConfig>(`/audit/${id}/rollback`, { method: 'POST', body: { confirmProduction } }),
+  rollback: (id: number, expectedConfig: EnvironmentConfig, confirmProduction = false) =>
+    request<EnvironmentConfig>(`/audit/${id}/rollback`, { method: 'POST', body: { expectedConfig, confirmProduction } }),
 };

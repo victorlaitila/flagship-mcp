@@ -11,6 +11,9 @@ import { requireActor } from './routes/actor.js';
 import { parseEnvironment } from './services/evaluation.js';
 import { compareEnvironments } from './services/flags.js';
 
+/** Keep in sync with the web client's watchdog (`STALE_AFTER_MS` in apps/web/src/hooks/useLive.ts). */
+export const SSE_HEARTBEAT_MS = 5000;
+
 export function createApp(ctx: ServiceContext): express.Express {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
@@ -37,7 +40,8 @@ export function createApp(ctx: ServiceContext): express.Express {
     res.write('retry: 2000\n\n');
     const send = (event: ChangeEvent) => res.write(`event: change\ndata: ${JSON.stringify(event)}\n\n`);
     const unsubscribe = ctx.notifier.subscribe(send);
-    const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
+    // A named event (unlike an SSE comment) reaches client code, which uses it to detect a dead stream.
+    const heartbeat = setInterval(() => res.write('event: heartbeat\ndata: {}\n\n'), SSE_HEARTBEAT_MS);
     req.on('close', () => {
       clearInterval(heartbeat);
       unsubscribe();

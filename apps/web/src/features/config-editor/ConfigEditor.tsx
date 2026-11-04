@@ -9,7 +9,7 @@ import {
   type ValidationIssue,
 } from '@flagship/shared';
 import { Eye, Lock, ShieldAlert, X } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Badge, Banner, Button, cx, Input, Modal, Select, Toggle } from '../../components/ui';
 import { api, ApiError } from '../../lib/api';
 import { ConfigDiff } from './ConfigDiff';
@@ -129,37 +129,58 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
   canEdit: boolean;
   onPreview: (result: PreviewResult | null) => void;
 }) {
+  // `latest` is the newest stored config this editor knows of; `base` is the one the draft started from.
+  const [latest, setLatest] = useState(persisted);
   const [base, setBase] = useState(persisted);
   const [draft, setDraft] = useState(persisted);
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'save' | 'preview' | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'save' | 'preview' | 'review' | null>(null);
+  const [review, setReview] = useState<{ current: EnvironmentConfig; proposed: EnvironmentConfig } | null>(null);
 
   const dirty = !same(draft, base);
-  const staleBase = !same(base, persisted);
+  // Saving would overwrite a change made elsewhere; the backend would refuse it (expectedConfig) anyway.
+  const conflict = dirty && !same(latest, base);
   const disabled = !canEdit || flag.status === 'archived';
 
-  // Follow live updates unless the user has unsaved edits.
+  // React only to new values of `persisted`. Comparing it with `base` instead would treat the list's
+  // pre-save copy as a live update and revert the editor right after a save.
+  const lastPersisted = useRef(persisted);
   useEffect(() => {
-    if (!dirty && staleBase) {
-      setBase(persisted);
-      setDraft(persisted);
+    if (same(persisted, lastPersisted.current)) return;
+    lastPersisted.current = persisted;
+    setLatest(persisted);
+  }, [persisted]);
+
+  // Follow the stored config unless the user has unsaved edits.
+  useEffect(() => {
+    if (!dirty && !same(latest, base)) {
+      setBase(latest);
+      setDraft(latest);
     }
-  }, [dirty, staleBase, persisted]);
+  }, [dirty, latest, base]);
+
+  /** Makes a config read from the backend the editor's starting point. */
+  const adopt = (config: EnvironmentConfig) => {
+    setLatest(config);
+    setBase(config);
+    setDraft(config);
+  };
 
   const edit = (patch: Partial<EnvironmentConfig>) => {
     setDraft((d) => ({ ...d, ...patch }));
     setIssues([]);
     setError(null);
+    setNotice(null);
     onPreview(null);
   };
 
   const discard = () => {
-    setBase(persisted);
-    setDraft(persisted);
+    adopt(latest);
     setIssues([]);
     setError(null);
+    setNotice(null);
     onPreview(null);
   };
 
@@ -167,6 +188,8 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
     if (e instanceof ApiError && e.issues.length) setIssues(e.issues);
     setError(e instanceof Error ? e.message : String(e));
   };
+
+  const fetchStored = () => api.config(flag.key, environment);
 
   const preview = async () => {
     setBusy('preview');
@@ -182,18 +205,56 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
     }
   };
 
-  const save = async (confirmProduction = false) => {
-    setBusy('save');
+  /** The connection dropped mid-save: ask the backend whether the write happened instead of guessing. */
+  const verifyLostSave = async (expected: EnvironmentConfig) => {
     try {
-      const saved = await api.updateConfig(flag.key, environment, draft, confirmProduction);
-      setBase(saved);
-      setDraft(saved);
+      const [current, result] = await Promise.all([fetchStored(), api.previewConfig(flag.key, environment, draft)]);
+      if (result.config && same(current, result.config)) {
+        adopt(current);
+        setNotice('The connection dropped while saving. Reloading from the server confirmed that your change was saved.');
+      } else if (same(current, expected)) {
+        setError('The connection dropped while saving and the change was not saved. Your edits are kept; try again.');
+      } else {
+        setLatest(current); // changed by someone else: shown as a conflict
+      }
+    } catch {
+      setError('The connection dropped while saving and the API is unreachable, so it is not known whether the change was saved. Your edits are kept; check again once the API is back.');
+    }
+  };
+
+  /** Saves the draft over `expected`, the stored config the user reviewed; the backend refuses if it changed. */
+  const save = async (expected: EnvironmentConfig, confirmProduction = false) => {
+    setBusy('save');
+    setError(null);
+    setNotice(null);
+    try {
+      await api.updateConfig(flag.key, environment, draft, expected, confirmProduction);
+      // Show what the backend stored (normalized), never the local draft.
+      adopt(await fetchStored());
       setIssues([]);
-      setError(null);
-      setConfirming(false);
       onPreview(null);
     } catch (e) {
-      setConfirming(false);
+      if (e instanceof ApiError && e.code === 'CONFLICT') await fetchStored().then(setLatest, handleError);
+      else if (e instanceof ApiError && e.status === 0) await verifyLostSave(expected);
+      else handleError(e);
+    } finally {
+      setReview(null);
+      setBusy(null);
+    }
+  };
+
+  /** Production: review the change against the stored config, as the backend would save it. */
+  const openReview = async () => {
+    setBusy('review');
+    setError(null);
+    setNotice(null);
+    try {
+      const [current, result] = await Promise.all([fetchStored(), api.previewConfig(flag.key, environment, draft)]);
+      setIssues(result.issues);
+      if (!same(current, base)) setLatest(current);
+      else if (!result.config) setError('Proposed configuration is invalid.');
+      else setReview({ current, proposed: result.config });
+    } catch (e) {
       handleError(e);
     } finally {
       setBusy(null);
@@ -210,10 +271,11 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
       {flag.status === 'archived' && (
         <div className="border-b border-line bg-raised/50 px-4 py-2 text-xs text-muted">This flag is archived. Restore it to change its configuration.</div>
       )}
-      {staleBase && dirty && (
+      {conflict && (
         <div className="border-b border-line p-3">
           <Banner tone="warn">
-            This configuration was changed elsewhere while you were editing.{' '}
+            This configuration was changed elsewhere since you started editing, so your edits can't be saved over it.
+            Your edits are kept below until you reload.{' '}
             <button className="font-semibold underline" onClick={discard}>Discard my edits and load the latest</button>
           </Banner>
         </div>
@@ -273,8 +335,9 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
         <PrerequisitesEditor flag={flag} value={draft.prerequisites} flags={flags} disabled={disabled} onChange={(prerequisites) => edit({ prerequisites })} />
       </Section>
 
-      {(error || issues.length > 0) && (
+      {(error || notice || issues.length > 0) && (
         <div className="space-y-2 border-t border-line px-4 py-3">
+          {notice && <p className="text-sm text-on">{notice}</p>}
           {error && <p className="text-sm text-danger">{error}</p>}
           {issues.length > 0 && <IssueList issues={issues} />}
         </div>
@@ -287,9 +350,9 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
           <Button disabled={!dirty} loading={busy === 'preview'} onClick={preview}><Eye className="size-3.5" /> Preview</Button>
           <Button
             variant="primary"
-            disabled={!dirty}
-            loading={busy === 'save' && !confirming}
-            onClick={() => (environment === 'production' ? setConfirming(true) : save())}
+            disabled={!dirty || conflict || busy !== null}
+            loading={busy === 'save' || busy === 'review'}
+            onClick={() => (environment === 'production' ? openReview() : save(base))}
           >
             {environment === 'production' ? 'Review & apply' : 'Save changes'}
           </Button>
@@ -297,21 +360,31 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
       )}
 
       <Modal
-        open={confirming}
-        onClose={() => setConfirming(false)}
+        open={review !== null}
+        onClose={() => setReview(null)}
         width="max-w-2xl"
         title={<span className="flex items-center gap-2"><ShieldAlert className="size-4 text-prod" /> Apply change to Production</span>}
         footer={
           <>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
-            <Button variant="danger" loading={busy === 'save'} onClick={() => save(true)}>Apply to production</Button>
+            <Button variant="ghost" onClick={() => setReview(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              disabled={review !== null && same(review.current, review.proposed)}
+              loading={busy === 'save'}
+              onClick={() => review && save(review.current, true)}
+            >
+              Apply to production
+            </Button>
           </>
         }
       >
         <p className="mb-4 text-sm text-muted">
-          You are changing <span className="font-mono text-fg">{flag.key}</span> in the Production environment, which affects every user evaluated there. (Environments are simulated within this local demo.) Review the change below.
+          You are changing <span className="font-mono text-fg">{flag.key}</span> in the Production environment, which affects every user evaluated there. (Environments are simulated within this local demo.) Below is the stored configuration and exactly what will be saved.
         </p>
-        <ConfigDiff previous={base} next={draft} />
+        {review && same(review.current, review.proposed) && (
+          <p className="mb-4 text-sm text-staging">Once normalized by the backend, this change is identical to the stored configuration. Nothing would change.</p>
+        )}
+        {review && <ConfigDiff previous={review.current} next={review.proposed} />}
       </Modal>
     </div>
   );

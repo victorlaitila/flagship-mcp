@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp } from '../src/app.js';
+import { createApp, SSE_HEARTBEAT_MS } from '../src/app.js';
 import { seededContext } from './helpers.js';
 
 let server: Server;
@@ -170,4 +170,15 @@ describe('REST API', () => {
     controller.abort();
     expect(text).toContain('"flagKey":"cart_redesign"');
   });
+
+  it('sends a named heartbeat event that clients use to detect a dead stream', async () => {
+    const controller = new AbortController();
+    const res = await fetch(`${base}/events`, { signal: controller.signal });
+    const reader = res.body!.getReader();
+    const started = Date.now();
+    let text = '';
+    while (!text.includes('event: heartbeat')) text += new TextDecoder().decode((await reader.read()).value);
+    controller.abort();
+    expect(Date.now() - started).toBeLessThan(SSE_HEARTBEAT_MS + 1000);
+  }, SSE_HEARTBEAT_MS + 3000);
 });

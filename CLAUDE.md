@@ -94,6 +94,7 @@ Follow the stack and architectural decisions established in the project specific
 - All configuration changes go through the central save-and-audit function (`applyConfig` in `apps/api/src/services/flags.ts`), so persistence, audit history and live updates cannot be bypassed.
 - The MCP server (`apps/mcp`) is an API client only: never access SQLite, evaluate or validate configurations there, and never send `confirmProduction` from it.
 - The backend normalizes configs. Clients must display the preview's returned `config`, never their own merged draft. MCP writes must carry the `planRevision` from a plan.
+- Every client that writes configs or rollbacks sends the reviewed stored config as `expectedConfig`, so concurrent changes are refused (409), never silently overwritten.
 - Avoid unnecessary abstraction layers and excessive indirection.
 - Keep interfaces and data models explicit and consistently typed.
 - Prefer existing project conventions over introducing new patterns.

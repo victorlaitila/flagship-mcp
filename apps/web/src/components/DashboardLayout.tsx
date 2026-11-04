@@ -3,7 +3,8 @@ import { Flag, GitCompareArrows, History, LayoutDashboard, Menu, Store, Users, X
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { useActor } from '../hooks/useActor';
-import { cx, EnvLabel } from './ui';
+import { useLiveStatus } from '../hooks/useLive';
+import { Banner, cx, EnvLabel } from './ui';
 
 const NAV = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -81,6 +82,19 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+/** Shown only while live updates are down, so stale data is never presented as current without warning. */
+function LiveStatusNotice() {
+  const status = useLiveStatus();
+  if (status !== 'reconnecting' && status !== 'disconnected') return null;
+  return (
+    <div role="status" className="mb-4">
+      <Banner tone="warn">
+        {status === 'reconnecting' ? 'Live updates interrupted. Reconnecting…' : 'Live updates are offline; still retrying.'} What you see may be out of date.
+      </Banner>
+    </div>
+  );
+}
+
 export function DashboardLayout() {
   const [open, setOpen] = useState(false);
   return (
@@ -102,6 +116,7 @@ export function DashboardLayout() {
       )}
       <main className="min-w-0 px-4 py-6 sm:px-8 sm:py-8">
         <div className="mx-auto max-w-7xl animate-fade-in">
+          <LiveStatusNotice />
           <Outlet />
         </div>
       </main>

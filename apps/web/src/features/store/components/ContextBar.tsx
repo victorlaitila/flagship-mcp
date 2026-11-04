@@ -1,16 +1,29 @@
 import { ENVIRONMENT_LABELS, ENVIRONMENTS, type Environment } from '@flagship/shared';
 import { ArrowUpRight, ChevronDown, Flag, User } from 'lucide-react';
 import { Link } from 'react-router';
+import { useLiveStatus } from '../../../hooks/useLive';
 import { useStore } from '../StoreContext';
 
 const ENV_DOT: Record<Environment, string> = { development: 'bg-dev', staging: 'bg-staging', production: 'bg-prod' };
 const regionName = new Intl.DisplayNames(['en'], { type: 'region' });
+const STATUS_LABELS = {
+  live: 'Live flags',
+  loading: 'Evaluating…',
+  reconnecting: 'Reconnecting… · last known flags',
+  disconnected: 'Live updates offline · last known flags',
+  stale: 'API unreachable · last known flags',
+  offline: 'API unreachable',
+} as const;
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Demo controls: who is shopping and which environment's flag configuration the store evaluates. */
 export function ContextBar() {
   const { users, user, setUserId, environment, setEnvironment, evaluations, evaluationError } = useStore();
-  const status = evaluationError ? (evaluations ? 'stale' : 'offline') : evaluations ? 'live' : 'loading';
+  const live = useLiveStatus();
+  // Only "live" when the flags loaded *and* the live-update connection is up; otherwise they may be outdated.
+  const status = evaluationError ? (evaluations ? 'stale' : 'offline')
+    : !evaluations || live === 'connecting' ? 'loading'
+    : live === 'connected' ? 'live' : live;
 
   return (
     <div className="border-b border-stone-800 bg-stone-900 text-stone-300">
@@ -60,7 +73,7 @@ export function ContextBar() {
               status === 'live' ? 'bg-emerald-400' : status === 'loading' ? 'animate-pulse bg-stone-400' : 'bg-amber-400'
             }`}
           />
-          {status === 'live' ? 'Live flags' : status === 'loading' ? 'Evaluating…' : status === 'stale' ? 'API unreachable · last known flags' : 'API unreachable'}
+          {STATUS_LABELS[status]}
         </span>
 
         <Link to="/" className="ml-auto inline-flex items-center gap-1 text-stone-400 transition hover:text-stone-100">

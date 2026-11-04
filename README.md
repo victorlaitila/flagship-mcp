@@ -25,7 +25,7 @@ Other scripts:
 
 | Command | What it does |
 |---|---|
-| `npm test` | API and MCP test suites (Vitest): engine, validation, services, HTTP integration, MCP tools against a real in-process API |
+| `npm test` | API, MCP and web test suites (Vitest): engine, validation, services, HTTP integration, MCP tools against a real in-process API, the web app's live-update connection |
 | `npm run test:e2e` | Browser end-to-end tests (Playwright) against an isolated stack — see [End-to-end tests](#end-to-end-tests) |
 | `npm run test:all` | Both of the above |
 | `npm run build` | Typechecks shared, API and MCP server, typechecks and builds the web app |
@@ -61,7 +61,8 @@ apps/web          React + Vite + Tailwind
 ```
 
 - The dashboard and storefront are one Vite app (`/` and `/store`) talking to the same API through the `/api` proxy.
-- Every mutation goes through a service function that checks permissions, validates, writes the change and its audit entry in one transaction, then publishes a change event. `GET /api/events` (SSE) streams those events; the web app re-fetches what it shows, so the storefront and dashboard update without reloads.
+- Every mutation goes through a service function that checks permissions, validates, writes the change and its audit entry in one transaction, then publishes a change event. `GET /api/events` (SSE) streams those events; the web app re-fetches what it shows, so the storefront and dashboard update without reloads. If the stream drops (or stays silent past the heartbeat), the client reconnects with exponential backoff (1 s doubling to 30 s), reloads everything it shows once reconnected, and the store indicator and a dashboard notice say so while it is down.
+- Dashboard writes are guarded the same way as MCP writes: config saves and rollbacks send `expectedConfig` (the stored config the user reviewed), so a change made elsewhere in the meantime is refused (409) instead of overwritten. The Production review and the rollback dialog compare the stored config with the backend-normalized result of the change.
 - The MCP server is just another API client: it never opens the database and never evaluates or validates flags itself.
 
 ### Database
@@ -169,7 +170,7 @@ All responses are JSON; errors are `{ "error": { "code", "message", "issues?", "
 | POST | `/api/audit/:id/rollback` | `{ confirmProduction?, expectedConfig? }`; `expectedConfig` works as for `PUT`; `X-Audit-Id` header as above |
 | GET | `/api/actors`, `/api/demo-users` | Dashboard identities and storefront users |
 | GET | `/api/whoami` | The actor for the request's `X-Actor-Id` (401 if unknown) |
-| GET | `/api/events` | SSE: `event: change` with `{ entity, flagKey?, segmentKey?, environment?, auditId }` |
+| GET | `/api/events` | SSE: `event: change` with `{ entity, flagKey?, segmentKey?, environment?, auditId }`, and `event: heartbeat` every 5 s so clients can detect a dead stream |
 
 Mutating endpoints require the `X-Actor-Id` header (`leo`, `ida` or `sara`).
 
@@ -189,12 +190,14 @@ Open the storefront in one window and the dashboard in another. Use the store's 
 
 ## End-to-end tests
 
-`npm run test:e2e` runs four Playwright tests (`e2e/flows.spec.ts`) in Chromium against the real app:
+`npm run test:e2e` runs the Playwright tests in Chromium against the real app. `e2e/flows.spec.ts` covers the main demo flows:
 
 1. Changing a flag in the dashboard (with the production confirmation dialog) updates an already-open storefront without a reload.
 2. Switching demo customer and environment produces the expected targeting (free-shipping banner, loyalty points).
 3. Rolling back a change from the Activity page restores the storefront and adds a new audit entry.
 4. A Developer cannot modify Production, both in the UI and via the API (403).
+
+`e2e/consistency.spec.ts` covers dashboard consistency: a stale save is refused and keeps the draft, the editor doesn't revert after saving, a save whose response is lost is verified against the backend, the Production review compares with the stored config and shows normalized values, rollback dialogs show their full effect and refuse a stale rollback, and the store and dashboard reconnect and resync after an API restart (that test starts its own API on port 4120 and Vite on 5181 so it can restart the API).
 
 Playwright starts its own API on port 4100 with a temporary database (`$TMPDIR/flagship-e2e.db`, deleted and re-seeded on every run) and a Vite server on port 5174, so your development database and a running `npm run dev` are untouched. Tests run serially and each restores any configuration it changes, so they don't depend on order. One-time setup: `npx playwright install chromium`.
 
