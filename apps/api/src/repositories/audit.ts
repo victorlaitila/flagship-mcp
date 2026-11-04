@@ -57,6 +57,7 @@ export function insertAuditEntry(db: Db, e: NewAuditEntry): number {
 
 export interface AuditFilter {
   flagKey?: string;
+  actorId?: string;
   environment?: Environment;
   operation?: AuditOperation;
   limit?: number;
@@ -66,6 +67,7 @@ export function listAuditEntries(db: Db, filter: AuditFilter = {}): AuditEntry[]
   const where: string[] = [];
   const params: (string | number)[] = [];
   if (filter.flagKey) (where.push('flag_key = ?'), params.push(filter.flagKey));
+  if (filter.actorId) (where.push('actor_id = ?'), params.push(filter.actorId));
   if (filter.environment) (where.push('environment = ?'), params.push(filter.environment));
   if (filter.operation) (where.push('operation = ?'), params.push(filter.operation));
   params.push(filter.limit ?? 200);

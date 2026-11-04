@@ -7,6 +7,8 @@ import { evaluationRoutes } from './routes/evaluation.js';
 import { flagRoutes } from './routes/flags.js';
 import { segmentRoutes } from './routes/segments.js';
 import type { ServiceContext } from './services/context.js';
+import { requireActor } from './routes/actor.js';
+import { parseEnvironment } from './services/evaluation.js';
 import { compareEnvironments } from './services/flags.js';
 
 export function createApp(ctx: ServiceContext): express.Express {
@@ -16,7 +18,15 @@ export function createApp(ctx: ServiceContext): express.Express {
   app.get('/api/health', (_req, res) => void res.json({ ok: true }));
   app.get('/api/actors', (_req, res) => void res.json(ACTORS));
   app.get('/api/demo-users', (_req, res) => void res.json(DEMO_USERS));
-  app.get('/api/environments/compare', (_req, res) => void res.json(compareEnvironments(ctx)));
+  app.get('/api/whoami', (req, res) => void res.json(requireActor(req)));
+  // ?environments=staging,production compares just those; default compares all three.
+  app.get('/api/environments/compare', (req, res) => {
+    const environments = typeof req.query.environments === 'string'
+      ? [...new Set(req.query.environments.split(',').map(parseEnvironment))]
+      : undefined;
+    if (environments && environments.length < 2) throw new AppError('BAD_REQUEST', 'Compare at least two different environments.');
+    res.json(compareEnvironments(ctx, environments));
+  });
   app.use('/api/flags', flagRoutes(ctx));
   app.use('/api/segments', segmentRoutes(ctx));
   app.use('/api/audit', auditRoutes(ctx));

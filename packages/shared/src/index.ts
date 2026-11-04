@@ -319,6 +319,8 @@ export interface PreviewUserResult {
 export interface PreviewResult {
   valid: boolean;
   issues: ValidationIssue[];
+  /** The normalized configuration that saving this input would store; null when invalid. */
+  config: EnvironmentConfig | null;
   results: PreviewUserResult[];
 }
 

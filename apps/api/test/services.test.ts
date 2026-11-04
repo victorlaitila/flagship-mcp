@@ -191,6 +191,6 @@ describe('atomicity', () => {
       throw new Error('broken SSE client');
     });
     const current = config('ai_recommendations', 'development');
-    expect(applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 40 }, false).rolloutPercentage).toBe(40);
+    expect(applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 40 }, false).config.rolloutPercentage).toBe(40);
   });
 });

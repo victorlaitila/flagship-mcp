@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   defaultVariantKey,
   ENVIRONMENTS,
@@ -123,10 +124,20 @@ function validateAgainstCurrentState(ctx: ServiceContext, flag: Flag, environmen
   });
 }
 
-/**
- * Validates and persists a config, writing an audit entry. Shared by updates and rollbacks.
- * Returns null when the config is unchanged (nothing written).
- */
+export interface AppliedConfig {
+  config: EnvironmentConfig;
+  /** Null when the config was unchanged and nothing was written. */
+  auditId: number | null;
+}
+
+export interface ApplyOptions {
+  operation?: Extract<AuditOperation, 'config.updated' | 'config.rolled_back'>;
+  rollbackOf?: number | null;
+  /** Optimistic concurrency: reject with CONFLICT unless the stored config still equals this. */
+  expectedConfig?: unknown;
+}
+
+/** Validates and persists a config, writing an audit entry. Shared by updates and rollbacks. */
 export function applyConfig(
   ctx: ServiceContext,
   actor: Actor,
@@ -134,16 +145,18 @@ export function applyConfig(
   environment: Environment,
   input: unknown,
   confirmProduction: unknown,
-  operation: Extract<AuditOperation, 'config.updated' | 'config.rolled_back'> = 'config.updated',
-  rollbackOf: number | null = null,
-): EnvironmentConfig {
+  { operation = 'config.updated', rollbackOf = null, expectedConfig }: ApplyOptions = {},
+): AppliedConfig {
   const flag = requireFlag(ctx, flagKey);
   assertCanManageEnvironment(actor, environment);
   assertProductionConfirmed(environment, confirmProduction);
   const { value, issues } = validateAgainstCurrentState(ctx, flag, environment, input);
   if (!value) throw invalid(issues, 'Configuration is invalid.');
   const previous = repo.getConfig(ctx.db, flag.id, environment);
-  if (JSON.stringify(previous) === JSON.stringify(value)) return previous;
+  if (expectedConfig !== undefined && !isDeepStrictEqual(previous, expectedConfig)) {
+    throw new AppError('CONFLICT', 'The configuration has changed since this proposal was made. Review the current configuration and try again.', undefined, { current: previous });
+  }
+  if (JSON.stringify(previous) === JSON.stringify(value)) return { config: previous, auditId: null };
 
   const timestamp = ctx.now().toISOString();
   const auditId = transaction(ctx.db, () => {
@@ -152,7 +165,7 @@ export function applyConfig(
     return insertAuditEntry(ctx.db, { timestamp, actor, operation, flagKey, environment, previous, next: value, rollbackOf });
   });
   ctx.notifier.publish({ entity: 'config', flagKey, environment, auditId });
-  return value;
+  return { config: value, auditId };
 }
 
 /** Validates a proposed config and evaluates it for demo users without persisting anything. */
@@ -172,7 +185,7 @@ export function previewConfig(ctx: ServiceContext, flagKey: string, environment:
     const changed = after !== null && (after.enabled !== before.enabled || after.variant !== before.variant);
     return { user, current: before, proposed: after, changed };
   });
-  return { valid: value !== null, issues, results };
+  return { valid: value !== null, issues, config: value, results };
 }
 
 const FIELD_SELECTORS: Record<ConfigField, (c: EnvironmentConfig) => unknown> = {
@@ -184,11 +197,11 @@ const FIELD_SELECTORS: Record<ConfigField, (c: EnvironmentConfig) => unknown> = 
   prerequisites: (c) => [...c.prerequisites].sort(),
 };
 
-export function compareEnvironments(ctx: ServiceContext): EnvironmentComparisonRow[] {
+export function compareEnvironments(ctx: ServiceContext, environments: readonly Environment[] = ENVIRONMENTS): EnvironmentComparisonRow[] {
   return listFlags(ctx).map((flag) => ({
     flag,
     differences: (Object.keys(FIELD_SELECTORS) as ConfigField[]).filter((field) => {
-      const values = ENVIRONMENTS.map((env) => JSON.stringify(FIELD_SELECTORS[field](flag.environments[env])));
+      const values = environments.map((env) => JSON.stringify(FIELD_SELECTORS[field](flag.environments[env])));
       return new Set(values).size > 1;
     }),
   }));

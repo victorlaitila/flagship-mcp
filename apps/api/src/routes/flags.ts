@@ -17,7 +17,10 @@ export function flagRoutes(ctx: ServiceContext): Router {
   router.put('/:key/environments/:env', (req, res) => {
     const actor = requireActor(req);
     const environment = parseEnvironment(req.params.env);
-    res.json(flags.applyConfig(ctx, actor, req.params.key, environment, req.body?.config, req.body?.confirmProduction));
+    const { config, auditId } = flags.applyConfig(ctx, actor, req.params.key, environment, req.body?.config,
+      req.body?.confirmProduction, { expectedConfig: req.body?.expectedConfig });
+    if (auditId !== null) res.set('X-Audit-Id', String(auditId));
+    res.json(config);
   });
   router.post('/:key/environments/:env/preview', (req, res) =>
     void res.json(flags.previewConfig(ctx, req.params.key, parseEnvironment(req.params.env), req.body?.config, req.body?.userIds)));

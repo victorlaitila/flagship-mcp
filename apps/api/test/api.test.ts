@@ -20,7 +20,7 @@ const call = async (path: string, init: RequestInit & { actor?: string; json?: u
     headers: { 'content-type': 'application/json', ...(init.actor ? { 'x-actor-id': init.actor } : {}) },
     body: init.json === undefined ? undefined : JSON.stringify(init.json),
   });
-  return { status: res.status, body: res.status === 204 ? null : await res.json() };
+  return { status: res.status, headers: res.headers, body: res.status === 204 ? null : await res.json() };
 };
 
 describe('REST API', () => {
@@ -92,6 +92,70 @@ describe('REST API', () => {
     const blocked = await call('/segments/beta_testers', { method: 'DELETE', actor: 'sara' });
     expect(blocked.status).toBe(409);
     expect(blocked.body.error.details.references.length).toBeGreaterThan(0);
+  });
+
+  it('accepts the hidden Claude Code service actor without listing it in the dashboard', async () => {
+    expect((await call('/whoami', { actor: 'claude-code' })).body).toEqual({ id: 'claude-code', name: 'Claude Code', role: 'release_manager' });
+    expect((await call('/actors')).body.map((a: { id: string }) => a.id)).not.toContain('claude-code');
+    expect((await call('/whoami')).status).toBe(401);
+  });
+
+  it('returns the audit id of a write and rejects stale proposals', async () => {
+    const path = '/flags/order_tracking_v2/environments/staging';
+    const { body: current } = await call(path);
+    const ok = await call(path, { method: 'PUT', actor: 'claude-code',
+      json: { config: { ...current, defaultEnabled: !current.defaultEnabled }, expectedConfig: current } });
+    expect(ok.status).toBe(200);
+    const auditId = Number(ok.headers.get('x-audit-id'));
+    const { body: [entry] } = await call('/audit?actorId=claude-code&limit=1');
+    expect(entry).toMatchObject({ id: auditId, actorName: 'Claude Code', flagKey: 'order_tracking_v2', environment: 'staging' });
+
+    // `current` is now stale: the write must be rejected and nothing audited.
+    const stale = await call(path, { method: 'PUT', actor: 'claude-code', json: { config: current, expectedConfig: current } });
+    expect(stale).toMatchObject({ status: 409, body: { error: { code: 'CONFLICT' } } });
+    expect((await call('/audit?actorId=claude-code')).body).toHaveLength(1);
+
+    const rolled = await call(`/audit/${auditId}/rollback`, { method: 'POST', actor: 'claude-code' });
+    expect(rolled.body).toEqual(current);
+    const rollbackId = Number(rolled.headers.get('x-audit-id'));
+    expect((await call(`/audit/${rollbackId}`)).body).toMatchObject({ id: rollbackId, operation: 'config.rolled_back', rollbackOf: auditId, next: current });
+    expect((await call('/audit/999999')).status).toBe(404);
+    expect((await call('/audit/abc')).status).toBe(400);
+  });
+
+  it('previews the normalized configuration that saving would store', async () => {
+    const preview = async (key: string, config: unknown) =>
+      (await call(`/flags/${key}/environments/staging/preview`, { method: 'POST', json: { config } })).body;
+    const { body: boolean } = await call('/flags/new_payment_api/environments/staging');
+    expect((await preview('new_payment_api', { ...boolean, rolloutPercentage: 50 })).config).toEqual(boolean);
+    const { body: percentage } = await call('/flags/ai_recommendations/environments/staging');
+    expect((await preview('ai_recommendations', { ...percentage, rolloutPercentage: 33.333 })).config.rolloutPercentage).toBe(33.33);
+    expect(await preview('ai_recommendations', { ...percentage, rolloutPercentage: -5 })).toMatchObject({ valid: false, config: null });
+  });
+
+  it('rejects a rollback whose expected configuration is stale and keeps the newer change', async () => {
+    const path = '/flags/loyalty_rewards/environments/development';
+    const { body: original } = await call(path);
+    const changed = await call(path, { method: 'PUT', actor: 'leo', json: { config: { ...original, defaultEnabled: !original.defaultEnabled } } });
+    const auditId = changed.headers.get('x-audit-id');
+    const { body: inspected } = await call(path);
+    const { body: newer } = await call(path, { method: 'PUT', actor: 'leo', json: { config: { ...inspected, enabled: !inspected.enabled } } });
+
+    const stale = await call(`/audit/${auditId}/rollback`, { method: 'POST', actor: 'leo', json: { expectedConfig: inspected } });
+    expect(stale).toMatchObject({ status: 409, body: { error: { code: 'CONFLICT' } } });
+    expect((await call(path)).body).toEqual(newer);
+    expect((await call(`/audit/${auditId}/rollback`, { method: 'POST', actor: 'leo', json: { expectedConfig: newer } })).status).toBe(200);
+  });
+
+  it('compares a chosen pair of environments', async () => {
+    const { body: pair } = await call('/environments/compare?environments=staging,production');
+    const { body: all } = await call('/environments/compare');
+    const diff = (rows: { flag: { key: string }; differences: string[] }[], key: string) => rows.find((r) => r.flag.key === key)!.differences;
+    // free_shipping_banner's default only differs in development.
+    expect(diff(all, 'free_shipping_banner')).toEqual(['default', 'rules']);
+    expect(diff(pair, 'free_shipping_banner')).toEqual(['rules']);
+    expect((await call('/environments/compare?environments=staging')).status).toBe(400);
+    expect((await call('/environments/compare?environments=staging,qa')).status).toBe(400);
   });
 
   it('streams change events over SSE', async () => {

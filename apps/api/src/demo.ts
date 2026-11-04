@@ -7,6 +7,9 @@ export const ACTORS: Actor[] = [
   { id: 'sara', name: 'Sara Koskinen', role: 'admin' },
 ];
 
+/** Non-human identities (e.g. the MCP server). Accepted like ACTORS but not offered in the dashboard identity switcher. */
+export const SERVICE_ACTORS: Actor[] = [{ id: 'claude-code', name: 'Claude Code', role: 'release_manager' }];
+
 export const SYSTEM_ACTOR: Actor = { id: 'system', name: 'System seed', role: 'admin' };
 
 /** Storefront customers used to demonstrate targeting and rollouts. */

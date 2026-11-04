@@ -4,11 +4,12 @@ import { getFlagWithConfigs } from '../repositories/flags.js';
 import { getAuditEntry, listAuditEntries, type AuditFilter } from '../repositories/audit.js';
 import type { ServiceContext } from './context.js';
 import { parseEnvironment } from './evaluation.js';
-import { applyConfig } from './flags.js';
+import { applyConfig, type AppliedConfig } from './flags.js';
 
 export function listAudit(ctx: ServiceContext, query: Record<string, unknown>): AuditEntry[] {
   const filter: AuditFilter = {};
   if (typeof query.flagKey === 'string' && query.flagKey) filter.flagKey = query.flagKey;
+  if (typeof query.actorId === 'string' && query.actorId) filter.actorId = query.actorId;
   if (query.environment) filter.environment = parseEnvironment(query.environment);
   if (query.operation) {
     if (!AUDIT_OPERATIONS.includes(query.operation as AuditOperation)) {
@@ -24,12 +25,18 @@ export function listAudit(ctx: ServiceContext, query: Record<string, unknown>): 
   return listAuditEntries(ctx.db, filter);
 }
 
+export function getAudit(ctx: ServiceContext, id: number): AuditEntry {
+  const entry = getAuditEntry(ctx.db, id);
+  if (!entry) throw notFound(`Audit entry ${id}`);
+  return entry;
+}
+
 /**
  * Restores the configuration that was in place before the given change, as a new
  * `config.rolled_back` entry. History is never modified. The restored config is
  * re-validated against the current state (e.g. a prerequisite may since have been archived).
  */
-export function rollback(ctx: ServiceContext, actor: Actor, auditId: number, confirmProduction: unknown): EnvironmentConfig {
+export function rollback(ctx: ServiceContext, actor: Actor, auditId: number, confirmProduction: unknown, expectedConfig?: unknown): AppliedConfig {
   const entry = getAuditEntry(ctx.db, auditId);
   if (!entry) throw notFound(`Audit entry ${auditId}`);
   if ((entry.operation !== 'config.updated' && entry.operation !== 'config.rolled_back') || !entry.flagKey || !entry.environment) {
@@ -41,5 +48,5 @@ export function rollback(ctx: ServiceContext, actor: Actor, auditId: number, con
     throw new AppError('CONFLICT', 'The current configuration already matches the state before this change.');
   }
   return applyConfig(ctx, actor, entry.flagKey, entry.environment, entry.previous as EnvironmentConfig,
-    confirmProduction, 'config.rolled_back', entry.id);
+    confirmProduction, { operation: 'config.rolled_back', rollbackOf: entry.id, expectedConfig });
 }

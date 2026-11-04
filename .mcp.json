@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "flagship": {
+      "command": "npx",
+      "args": ["--no-install", "tsx", "apps/mcp/src/index.ts"],
+      "env": {
+        "FLAGSHIP_API_URL": "http://localhost:4000",
+        "FLAGSHIP_ACTOR_ID": "claude-code"
+      }
+    }
+  }
+}
