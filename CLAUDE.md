@@ -144,6 +144,17 @@ Keep documentation useful, concise, and accurate.
 - Keep setup instructions, architecture descriptions, API documentation, and important development decisions aligned with the actual implementation.
 - Prefer updating existing documentation over creating multiple overlapping documents.
 
+### Where documentation lives
+
+Update the matching document in the same change as the code. A task is not complete while its documentation is out of date.
+
+| Document | Update when |
+|---|---|
+| `README.md` | Setup, commands, project layout or top-level limitations change. Keep it short; details belong in `docs/`. |
+| `docs/GUIDE.md` | User-visible behaviour changes (dashboard, storefront, MCP workflow). Keep its examples true to the seeded data. |
+| `docs/REFERENCE.md` | Evaluation rules, permissions, API endpoints, MCP tools, configuration or test setup change. |
+| `docs/DECISIONS.md` | An architectural decision is made or reversed. Add a new entry rather than rewriting an old one. |
+
 ### CLAUDE.md maintenance
 
 This file should evolve as the project develops.

@@ -11,4 +11,4 @@ if (!isSeeded(db)) {
 }
 
 const app = createApp({ db, notifier: new ChangeNotifier(), now: () => new Date() });
-app.listen(PORT, () => console.log(`Flagship API listening on http://localhost:${PORT} (db: ${DATABASE_PATH})`));
+app.listen(PORT, 'localhost', () => console.log(`Flagship API listening on http://localhost:${PORT} (db: ${DATABASE_PATH})`));
