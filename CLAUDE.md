@@ -1,192 +1,66 @@
 # CLAUDE.md
 
-## Project: Flagship
+Flagship is a local feature-flag platform: an Express + SQLite API, a React dashboard and demo storefront, and an MCP server for AI assistants. It is a portfolio demo: identities are simulated, and there's no authentication and no deployment.
 
-A local feature flag management platform with a functional demo e-commerce application.
+Read `docs/DECISIONS.md` before changing architecture, and `docs/REFERENCE.md` for exact behaviour (evaluation, permissions, API, MCP tools).
 
-This file defines the principles, development workflow, and expectations that apply throughout the project. The project specification and explicit user decisions take precedence over assumptions or implementation preferences.
+## Working agreement
 
----
+- Ask before deciding anything that materially affects behaviour, architecture or scope. Group questions; recommend an option and give the trade-off.
+- Challenge questionable requests and point out simpler alternatives. Don't agree just to be agreeable.
+- Build only what the task needs: no speculative abstractions, options or dependencies. Make no unrelated changes or refactors in a focused task.
+- Understand the existing code before changing it, and follow the conventions already in use.
+- Never claim something works or was tested unless the check actually ran. Report what was verified and what wasn't.
+- CLAUDE.md changes need the user's approval. Suggest additions when you learn something that would prevent a repeated mistake.
 
-## 1. Core Working Principles
+## Architecture invariants
 
-### Clarify before assuming
+These prevent real bugs; don't break them without an explicit decision (and a new entry in `docs/DECISIONS.md`).
 
-- Do not invent requirements, silently fill knowledge gaps, or make product decisions on the user's behalf.
-- If a requirement, expected behavior, architectural decision, or technical detail is unclear and could materially affect the implementation, stop and ask the user before proceeding.
-- Ask focused questions. Group related questions together rather than interrupting the workflow with a series of small questions.
-- When presenting alternatives, briefly explain the trade-offs and recommend one where appropriate.
-- Never present an assumption as an established requirement.
-- For genuinely inconsequential implementation details, use the simplest conventional solution. Make the decision visible if it could become relevant later.
-
-### YAGNI — You Aren't Gonna Need It
-
-- Implement only what is required by the current project scope.
-- Do not build abstractions, extension points, configuration systems, or infrastructure for hypothetical future requirements.
-- Avoid premature generalization and unnecessary flexibility.
-- Prefer straightforward solutions over elaborate architectural patterns.
-- Do not introduce additional dependencies without a concrete reason.
-- Do not build features merely because they might be useful someday.
-- Keep the implementation easy to understand, maintain, test, and extend when an actual need arises.
-
-### Think before implementing
-
-- Understand the existing code and architecture before making changes.
-- Identify the smallest reasonable implementation that solves the problem.
-- Consider the impact on existing functionality before modifying shared components, interfaces, or data structures.
-- Do not perform broad refactors when a focused change is sufficient.
-- Do not overwrite or remove existing functionality without understanding its purpose.
-- If a proposed change significantly affects the architecture or project scope, discuss it with the user first.
-
----
-
-## 2. Development Workflow
-
-Follow this workflow for non-trivial tasks:
-
-1. **Understand:** Inspect the relevant code, documentation, and existing implementation.
-2. **Clarify:** Identify ambiguities, missing requirements, and important decisions. Ask the user when clarification is needed.
-3. **Plan:** Briefly explain the proposed approach, especially when multiple files, components, or architectural layers are involved.
-4. **Implement:** Make focused, incremental changes. Avoid unnecessary modifications.
-5. **Verify:** Run relevant tests, checks, and builds. Do not assume an implementation works without verifying it.
-6. **Report:** Summarize what changed, what was verified, and any remaining limitations or decisions.
-
-For small, straightforward changes, avoid unnecessary planning overhead. Use judgment while preserving the principles above.
-
-### Implementation discipline
-
-- Do not leave broken, incomplete, or misleading functionality behind.
-- Do not replace real functionality with hardcoded values, mock data, or visual placeholders unless explicitly requested.
-- Keep frontend, backend, and shared types consistent.
-- Validate important business rules on the backend, not only in the frontend.
-- Handle loading, error, empty, and success states where relevant.
-- Prefer deterministic and reproducible behavior.
-- Keep business logic separate from presentation logic.
-- Write tests for important business logic and behavior, particularly where incorrect results could cause configuration or data integrity problems.
-- Do not claim that something has been tested unless the relevant test or check was actually executed.
-
----
-
-## 3. Project-Specific Priorities
-
-### Functional correctness first
-
-Flagship must be a genuinely functioning application, not a static UI prototype.
-
-- The dashboard, feature flag service, and demo storefront must use the same backend and persisted configuration.
-- Feature evaluations must be performed by the actual evaluation engine.
-- Changes made through the dashboard must affect the demo storefront.
-- Configuration must persist across application restarts.
-- Feature evaluation and rollout assignment must be deterministic.
-- Configuration validation and permission enforcement must happen on the backend.
-- Audit history must accurately represent configuration changes.
-
-Do not simulate functionality in the frontend when the underlying backend behavior should exist.
-
-### Architecture
-
-Follow the stack and architectural decisions established in the project specification.
-
-- Use TypeScript consistently across the application.
-- Maintain clear boundaries between frontend, backend, and shared code.
-- Keep the backend API as the source of truth for feature flag configuration and evaluation.
-- Feature evaluation and validation live in the API. The frontend must never independently determine feature flag outcomes.
-- All configuration changes go through the central save-and-audit function (`applyConfig` in `apps/api/src/services/flags.ts`), so persistence, audit history and live updates cannot be bypassed.
-- The MCP server (`apps/mcp`) is an API client only: never access SQLite, evaluate or validate configurations there, and never send `confirmProduction` from it.
-- The backend normalizes configs. Clients must display the preview's returned `config`, never their own merged draft. MCP writes must carry the `planRevision` from a plan.
+- The API (`apps/api`) owns configuration, validation, normalization and evaluation. Clients never compute flag outcomes or re-implement validation.
+- Every config write, including rollbacks, goes through `applyConfig` (`apps/api/src/services/flags.ts`): permissions → Production confirmation → validation → stale-write check → persist and audit in one transaction → change event.
 - Every client that writes configs or rollbacks sends the reviewed stored config as `expectedConfig`, so concurrent changes are refused (409), never silently overwritten.
-- Avoid unnecessary abstraction layers and excessive indirection.
-- Keep interfaces and data models explicit and consistently typed.
-- Prefer existing project conventions over introducing new patterns.
+- Reviews and previews show the preview endpoint's normalized `config`, never a client-side merged draft.
+- The MCP server (`apps/mcp`) is an API client only: no SQLite access, no evaluation or validation, and it never sends `confirmProduction`. Its writes carry the `planRevision` from a plan.
+- Permissions and Production confirmation are enforced in the backend; the UI only mirrors them.
+- Live updates: change events are invalidation signals and clients refetch. Keep the SSE heartbeat (`SSE_HEARTBEAT_MS`), the client watchdog (`STALE_AFTER_MS` in `apps/web/src/hooks/useLive.ts`) and the Vite proxy's stream-closing fix together; removing one brings back silently dead live updates.
+- React effects return only `undefined` or a cleanup function, and clean up subscriptions and listeners.
 
-If the architecture needs to change substantially, explain why and ask before proceeding.
+## Verifying changes
 
-### User interface and experience
+| Command | When |
+|---|---|
+| `npm test` | Always (API, MCP and web Vitest suites) |
+| `npm run build` | Always (typechecks every package) |
+| `npm run test:e2e` | Any change to web, API behaviour or live updates |
 
-The application should feel like a polished, professional developer-oriented product.
+The `verify` skill runs the full check, including a before/after check of the dev database. The `sandbox` skill starts an isolated stack for manual, browser or live MCP testing.
 
-- Prioritize clarity, usability, and information hierarchy.
-- Use a restrained dark visual direction with purposeful accent colors.
-- Use consistent spacing, typography, borders, and component patterns.
-- Add subtle animations and transitions where they improve the experience.
-- Avoid generic admin-dashboard layouts, decorative clutter, excessive gradients, and oversized cards.
-- Do not sacrifice usability or information density for visual effects.
-- Ensure the interface works at common desktop and mobile sizes.
+- A bug fix comes with a regression test that fails without the fix.
+- Prefer tests of observable behaviour against the real API (in-process for Vitest; the real app for Playwright) over mocks.
 
-Do not introduce a new design system or UI library without a clear reason.
+## Gotchas
 
----
+- Never touch the dev database (`apps/api/data/flagship.db`) in tests or experiments: use a temp `DATABASE_PATH` and other ports. Playwright uses 4100/5174, and the restart test uses 4120/5181.
+- The API binds to `localhost`, which resolves to `::1` on macOS. Use `localhost`, not `127.0.0.1`.
+- Claude Code's `flagship` MCP server keeps running old code after edits to `apps/mcp`: reconnect with `/mcp`. It talks to whatever API is on port 4000.
+- E2E tests share one API and database; each test must restore every config it changes.
 
-## 4. Code Quality
+## UI
 
-- Write readable, maintainable, and appropriately simple code.
-- Use descriptive names and explicit types.
-- Avoid duplicated business logic.
-- Avoid unnecessarily large components and functions.
-- Extract shared logic when there is a real reuse or maintainability benefit.
-- Avoid abstractions that make simple behavior harder to follow.
-- Handle errors explicitly rather than silently swallowing them.
-- Remove unused code and dependencies when appropriate.
-- Keep comments focused on explaining non-obvious reasoning, not restating the code.
-- Follow existing formatting, linting, and naming conventions.
-- React effects must have correct cleanup behavior: an effect callback returns only `undefined` or a valid cleanup function, and subscriptions and event listeners are cleaned up. Use a block body when an effect does several things or its cleanup would otherwise be unclear.
+- The dashboard uses a restrained dark, developer-oriented style; the storefront uses a light, "real shop" style. Reuse the components in `apps/web/src/components/ui.tsx`.
+- Every data view handles loading, error and empty states, and works at desktop and mobile widths.
+- Don't add a UI library or design system without a clear reason.
 
-Do not make unrelated cleanup changes during focused tasks.
+## Documentation
 
----
-
-## 5. Documentation and Project Knowledge
-
-Keep documentation useful, concise, and accurate.
-
-- Update documentation when implementation changes make it inaccurate.
-- Do not document hypothetical features that do not exist.
-- Keep setup instructions, architecture descriptions, API documentation, and important development decisions aligned with the actual implementation.
-- Prefer updating existing documentation over creating multiple overlapping documents.
-
-### Where documentation lives
-
-Update the matching document in the same change as the code. A task is not complete while its documentation is out of date.
+Update the matching document in the same change as the code. A task isn't complete while its docs are out of date.
 
 | Document | Update when |
 |---|---|
 | `README.md` | Setup, commands, project layout or top-level limitations change. Keep it short; details belong in `docs/`. |
 | `docs/GUIDE.md` | User-visible behaviour changes (dashboard, storefront, MCP workflow). Keep its examples true to the seeded data. |
 | `docs/REFERENCE.md` | Evaluation rules, permissions, API endpoints, MCP tools, configuration or test setup change. |
-| `docs/DECISIONS.md` | An architectural decision is made or reversed. Add a new entry rather than rewriting an old one. |
+| `docs/DECISIONS.md` | An architectural decision is made or reversed. Use the `adr` skill; add a new entry rather than rewriting an old one. |
 
-### CLAUDE.md maintenance
-
-This file should evolve as the project develops.
-
-If you discover information that would materially improve future development sessions, such as:
-
-- An important architectural decision.
-- A recurring implementation constraint.
-- A project-wide convention.
-- A non-obvious technical limitation.
-- A lesson learned that should prevent repeated mistakes.
-
-Then explicitly suggest updating `CLAUDE.md` to include it.
-
-Explain what you recommend adding and why. Ask the user for approval before modifying this file.
-
-Do not add temporary task details, redundant instructions, or information already documented elsewhere. Keep this file concise and useful.
-
----
-
-## 6. Communication Expectations
-
-Act as a critical engineering partner, not simply an implementation assistant.
-
-- Challenge questionable requirements and point out potential problems.
-- Explain meaningful technical trade-offs.
-- Recommend simpler alternatives when a proposed solution is unnecessarily complex.
-- Be honest about limitations, technical debt, and incomplete work.
-- Do not agree with a suggestion just to be agreeable.
-- Avoid lengthy explanations when a concise answer is sufficient.
-- Do not make significant product or architectural decisions without the user's input.
-
-The objective is to build a polished, technically sound project through an efficient, iterative AI-assisted development workflow.
-
-**When in doubt, clarify. When implementing, keep it simple. When something works, verify it.**
+Document only what exists; don't create overlapping documents.

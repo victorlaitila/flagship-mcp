@@ -144,11 +144,13 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 | Suite | Location | Covers |
 |---|---|---|
 | API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity), HTTP integration including SSE |
-| MCP | `apps/mcp/test` | Every tool through the SDK client against a real in-process API: plan/apply binding, normalization, stale plans, Production refusal, failure modes |
+| MCP | `apps/mcp/test` | Every tool through the SDK client against a real in-process API: plan/apply binding, normalization, stale plans, Production refusal, failure modes. `stdio.test.ts` also starts the real server process over stdio, as Claude Code does. |
 | Web | `apps/web/test` | Live-update connection: backoff, reconnect, resync, dead-stream detection |
 | E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |
 
 Playwright starts its own API (port 4100, throwaway database) and web server (5174), so a running `npm run dev` and its database are never touched. The restart test starts a further pair (4120/5181) that it can stop and start. Tests run serially, and each restores what it changes.
+
+CI (`.github/workflows/ci.yml`) runs the build and all three Vitest suites in one job and Playwright in another, on every push to `main` and every pull request.
 
 ## Other limitations
 
