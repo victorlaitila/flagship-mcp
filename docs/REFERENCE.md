@@ -69,9 +69,9 @@ Identities are simulated: the client sends `X-Actor-Id`, and the backend derives
 Rules enforced by the API:
 
 - Config changes and rollbacks are limited by role and environment (403 otherwise).
-- Production writes require `confirmProduction: true` (428 otherwise). The dashboard sends it only from its review dialog; the MCP server never sends it.
+- Production writes require `confirmProduction: true` (428 otherwise). This includes archiving or restoring a flag that is enabled in Production. The dashboard sends it only from its confirmation dialogs; the MCP server never sends it.
 - Archiving or restoring flags and managing segments are admin-only. Any role can create flags and edit flag metadata.
-- A flag can't be archived while it is a prerequisite of an active flag. A segment can't be deleted while rules reference it (409, with the references).
+- A flag can't be archived while it is a prerequisite of an active flag, or restored while one of its own prerequisites is archived. A segment can't be deleted while rules reference it (409, with the references).
 - **Stale writes:** when a config write or rollback includes `expectedConfig`, it is refused with 409 if the stored config differs. The dashboard and MCP server always send it.
 - Every successful change writes an audit entry with the previous and new state; a save that changes nothing writes none.
 - **Rollback** restores the entry's *previous* config in full, as a new `config.rolled_back` entry. It is re-validated and permission-checked, and history is never modified.
@@ -85,7 +85,7 @@ JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "d
 | GET | `/api/flags` | All flags with their configs for every environment |
 | POST | `/api/flags` | Create (`key, name, description, type, owner, tags, variants?`) |
 | GET / PATCH | `/api/flags/:key` | Read / edit metadata |
-| POST | `/api/flags/:key/archive`, `/restore` | Admin only |
+| POST | `/api/flags/:key/archive`, `/restore` | Admin only. `{ confirmProduction? }`, required when the flag is enabled in Production |
 | GET / PUT | `/api/flags/:key/environments/:env` | PUT `{ config, expectedConfig?, confirmProduction? }`. Header `X-Audit-Id` names the entry written. |
 | POST | `/api/flags/:key/environments/:env/preview` | `{ config, userIds? }` → `valid`, `issues`, normalized `config`, and current vs proposed result per demo user. Saves nothing. |
 | GET | `/api/environments/compare?environments=a,b` | Which fields differ per flag (all three environments by default) |
@@ -146,7 +146,7 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 | API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity), HTTP integration including SSE |
 | MCP | `apps/mcp/test` | Every tool through the SDK client against a real in-process API: plan/apply binding, normalization, stale plans, Production refusal, failure modes. `stdio.test.ts` also starts the real server process over stdio, as Claude Code does. |
 | Web | `apps/web/test` | Live-update connection: backoff, reconnect, resync, dead-stream detection |
-| E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |
+| E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, archiving in Production, malformed storefront data, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |
 
 Playwright starts its own API (port 4100, throwaway database) and web server (5174), so a running `npm run dev` and its database are never touched. The restart test starts a further pair (4120/5181) that it can stop and start. Tests run serially, and each restores what it changes.
 

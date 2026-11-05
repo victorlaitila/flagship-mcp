@@ -90,6 +90,8 @@ export function evaluateFlag(
   environment: Environment,
   user: UserContext,
   visiting: Set<string> = new Set(),
+  /** Prerequisite results already computed in this evaluation; shared prerequisites would otherwise make it exponential. */
+  evaluated: Map<string, EvaluationResult | null> = new Map(),
 ): EvaluationResult | null {
   const flag = snapshot.flags.get(flagKey);
   const configs = snapshot.configs.get(flagKey);
@@ -106,9 +108,11 @@ export function evaluateFlag(
   // Validation forbids cycles; the guard keeps a corrupted database from recursing forever.
   visiting.add(flagKey);
   for (const prerequisiteKey of config.prerequisites) {
-    const prerequisite = visiting.has(prerequisiteKey)
-      ? null
-      : evaluateFlag(snapshot, prerequisiteKey, environment, user, visiting);
+    let prerequisite = evaluated.get(prerequisiteKey);
+    if (prerequisite === undefined) {
+      if (visiting.has(prerequisiteKey)) prerequisite = null;
+      else evaluated.set(prerequisiteKey, prerequisite = evaluateFlag(snapshot, prerequisiteKey, environment, user, visiting, evaluated));
+    }
     if (!prerequisite?.enabled) {
       visiting.delete(flagKey);
       return off(

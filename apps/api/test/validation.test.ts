@@ -76,6 +76,15 @@ describe('findCycle', () => {
   it('finds no cycle in a DAG', () => {
     expect(findCycle('a', ['b'], new Map([['b', ['c']], ['c', []]]))).toBeNull();
   });
+
+  it('visits each flag once in a graph with shared prerequisites', () => {
+    const graph = new Map(Array.from({ length: 34 }, (_, i) => [`f${i}`, i < 2 ? [] : [`f${i - 1}`, `f${i - 2}`]]));
+    const start = performance.now();
+    expect(findCycle('x', ['f33', 'f32'], graph)).toBeNull();
+    // f0 → f33 → f32 → … → f2 → f0
+    expect(findCycle('f0', ['f33'], graph)).toEqual(['f0', ...Array.from({ length: 32 }, (_, i) => `f${33 - i}`), 'f0']);
+    expect(performance.now() - start).toBeLessThan(200);
+  });
 });
 
 describe('segment validation', () => {

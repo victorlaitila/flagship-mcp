@@ -10,8 +10,8 @@ export function flagRoutes(ctx: ServiceContext): Router {
   router.post('/', (req, res) => void res.status(201).json(flags.createFlag(ctx, requireActor(req), req.body)));
   router.get('/:key', (req, res) => void res.json(flags.getFlag(ctx, req.params.key)));
   router.patch('/:key', (req, res) => void res.json(flags.updateFlag(ctx, requireActor(req), req.params.key, req.body)));
-  router.post('/:key/archive', (req, res) => void res.json(flags.setFlagStatus(ctx, requireActor(req), req.params.key, 'archived')));
-  router.post('/:key/restore', (req, res) => void res.json(flags.setFlagStatus(ctx, requireActor(req), req.params.key, 'active')));
+  router.post('/:key/archive', (req, res) => void res.json(flags.setFlagStatus(ctx, requireActor(req), req.params.key, 'archived', req.body?.confirmProduction)));
+  router.post('/:key/restore', (req, res) => void res.json(flags.setFlagStatus(ctx, requireActor(req), req.params.key, 'active', req.body?.confirmProduction)));
   router.get('/:key/environments/:env', (req, res) =>
     void res.json(flags.getConfig(ctx, req.params.key, parseEnvironment(req.params.env))));
   router.put('/:key/environments/:env', (req, res) => {

@@ -155,4 +155,13 @@ describe('prerequisites', () => {
     ]);
     expect(evaluateFlag(s, 'a', 'development', fi)).toMatchObject({ enabled: false, reason: 'PREREQUISITE_FAILED' });
   });
+
+  it('evaluates shared prerequisites once, not once per path', () => {
+    // Each flag requires the previous two: without memoization the work doubles with every flag.
+    const s = snapshot(Array.from({ length: 34 }, (_, i) =>
+      [flag(`f${i}`, 'boolean'), allEnvs(cfg({ defaultEnabled: true, prerequisites: i < 2 ? [] : [`f${i - 1}`, `f${i - 2}`] }))]));
+    const start = performance.now();
+    expect(evaluateFlag(s, 'f33', 'development', fi)?.enabled).toBe(true);
+    expect(performance.now() - start).toBeLessThan(200);
+  });
 });

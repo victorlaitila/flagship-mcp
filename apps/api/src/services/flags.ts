@@ -84,10 +84,24 @@ export function updateFlag(ctx: ServiceContext, actor: Actor, key: string, input
   return getFlag(ctx, key);
 }
 
-export function setFlagStatus(ctx: ServiceContext, actor: Actor, key: string, status: Flag['status']): FlagWithConfigs {
+export function setFlagStatus(
+  ctx: ServiceContext,
+  actor: Actor,
+  key: string,
+  status: Flag['status'],
+  confirmProduction?: unknown,
+): FlagWithConfigs {
   assertCanManageGlobal(actor, status === 'archived' ? 'archive flags' : 'restore flags');
   const flag = requireFlag(ctx, key);
   if (flag.status === status) return getFlag(ctx, key);
+  if (status === 'active') {
+    const configs = getFlag(ctx, key).environments;
+    const archived = [...new Set(ENVIRONMENTS.flatMap((env) => configs[env].prerequisites))]
+      .filter((prerequisite) => repo.getFlag(ctx.db, prerequisite)?.status === 'archived');
+    if (archived.length > 0) {
+      throw new AppError('CONFLICT', `Cannot restore "${key}": it requires ${archived.join(', ')}, which ${archived.length > 1 ? 'are' : 'is'} archived.`, undefined, { archived });
+    }
+  }
   if (status === 'archived') {
     const dependents = repo.listFlagsWithConfigs(ctx.db).flatMap((f) =>
       f.status === 'active'
@@ -98,6 +112,8 @@ export function setFlagStatus(ctx: ServiceContext, actor: Actor, key: string, st
       throw new AppError('CONFLICT', `Cannot archive "${key}": it is a prerequisite of ${dependents.join(', ')}.`, undefined, { dependents });
     }
   }
+  // Archiving or restoring a flag that is enabled in Production changes Production evaluation.
+  if (repo.getConfig(ctx.db, flag.id, 'production').enabled) assertProductionConfirmed('production', confirmProduction);
   const next: Flag = { ...flag, status, updatedAt: ctx.now().toISOString() };
   const auditId = transaction(ctx.db, () => {
     repo.updateFlag(ctx.db, next);

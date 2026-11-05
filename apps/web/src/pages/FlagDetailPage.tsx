@@ -7,7 +7,7 @@ import {
   type FlagWithConfigs,
   type PreviewResult,
 } from '@flagship/shared';
-import { Archive, ArchiveRestore, ChevronLeft, Pencil } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronLeft, Pencil, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { Badge, Button, cx, EmptyState, EnvLabel, ErrorState, Field, Input, Loading, Modal, Panel, StatusPill } from '../components/ui';
@@ -59,11 +59,14 @@ function FlagHeader({ flag }: { flag: FlagWithConfigs }) {
   const { actor } = useActor();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const isAdmin = actor !== null && canManageGlobalConfig(actor.role);
-  const toggleArchive = async () => {
+  const archiving = flag.status === 'active';
+  const toggleArchive = async (confirmProduction = false) => {
+    setConfirming(false);
     setError(null);
     try {
-      await (flag.status === 'active' ? api.archiveFlag(flag.key) : api.restoreFlag(flag.key));
+      await (archiving ? api.archiveFlag(flag.key, confirmProduction) : api.restoreFlag(flag.key, confirmProduction));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -93,14 +96,28 @@ function FlagHeader({ flag }: { flag: FlagWithConfigs }) {
             variant={flag.status === 'active' ? 'danger' : 'secondary'}
             disabled={!isAdmin}
             title={isAdmin ? undefined : 'Only admins can archive or restore flags'}
-            onClick={toggleArchive}
+            onClick={() => (flag.environments.production.enabled ? setConfirming(true) : toggleArchive())}
           >
-            {flag.status === 'active' ? <><Archive className="size-3.5" /> Archive</> : <><ArchiveRestore className="size-3.5" /> Restore</>}
+            {archiving ? <><Archive className="size-3.5" /> Archive</> : <><ArchiveRestore className="size-3.5" /> Restore</>}
           </Button>
         </div>
       </div>
       {error && <p className="text-sm text-danger">{error}</p>}
       {editing && <EditDetailsModal flag={flag} open onClose={() => setEditing(false)} />}
+      <Modal
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title={<span className="flex items-center gap-2"><ShieldAlert className="size-4 text-prod" /> {archiving ? 'Archive' : 'Restore'} a flag enabled in Production</span>}
+        footer={<>
+          <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+          <Button variant="danger" onClick={() => toggleArchive(true)}>{archiving ? 'Archive' : 'Restore'} in production</Button>
+        </>}
+      >
+        <p className="text-sm text-muted">
+          <span className="font-mono text-fg">{flag.key}</span> is enabled in Production.{' '}
+          {archiving ? 'Archiving turns it off for every user there.' : 'Restoring turns it back on there with its current configuration.'}
+        </p>
+      </Modal>
     </div>
   );
 }

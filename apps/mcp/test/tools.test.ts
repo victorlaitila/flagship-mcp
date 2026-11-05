@@ -45,7 +45,7 @@ const auditCount = async () => (await api('/audit?limit=1000')).length;
 const send = async (method: string, path: string, actor: string, json?: unknown) => (await fetch(`${apiUrl}/api${path}`, {
   method, headers: { 'content-type': 'application/json', 'x-actor-id': actor }, body: json === undefined ? undefined : JSON.stringify(json),
 })).json();
-const adminPost = (path: string) => send('POST', path, 'sara');
+const adminPost = (path: string) => send('POST', path, 'sara', { confirmProduction: true });
 
 describe('tool discovery', () => {
   it('registers the eight Flagship tools with descriptions and schemas', async () => {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { expectNotReloaded, freeShippingBanner, getConfig, markNoReload, putConfig } from './helpers';
+import { ADMIN, expectNotReloaded, freeShippingBanner, getConfig, markNoReload, putConfig } from './helpers';
 
 // Each test restores the configuration it changes, so tests are independent of order and repeatable.
 
@@ -105,4 +105,48 @@ test('a Developer cannot modify Production', async ({ page, request }) => {
   });
   expect(res.status()).toBe(403);
   expect(await getConfig(request, 'new_search', 'production')).toEqual(config);
+});
+
+test('archiving a flag enabled in Production asks for confirmation', async ({ page, request }) => {
+  const status = async () => (await (await request.get('/api/flags/free_shipping_banner')).json()).status;
+  try {
+    await page.goto('/flags/free_shipping_banner');
+    await page.getByRole('button', { name: 'Archive' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('is enabled in Production');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    expect(await status()).toBe('active');
+
+    await page.getByRole('button', { name: 'Archive' }).click();
+    await dialog.getByRole('button', { name: 'Archive in production' }).click();
+    await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible();
+    expect(await status()).toBe('archived');
+
+    await page.getByRole('button', { name: 'Restore' }).click();
+    await dialog.getByRole('button', { name: 'Restore in production' }).click();
+    await expect(page.getByRole('button', { name: 'Archive' })).toBeVisible();
+    expect(await status()).toBe('active');
+  } finally {
+    await request.post('/api/flags/free_shipping_banner/restore', { headers: ADMIN, data: { confirmProduction: true } });
+  }
+});
+
+test('the store survives malformed saved data', async ({ page }) => {
+  const cases: Record<string, string>[] = [
+    { 'nordhem.cart': 'null' },
+    { 'nordhem.cart': '{}' },
+    { 'nordhem.session': 'null' },
+    { 'nordhem.orders': '[{"id":"NH-1"}]' },
+  ];
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  for (const stored of cases) {
+    await page.goto('/store');
+    await page.evaluate((s) => { localStorage.clear(); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); }, stored);
+    await page.goto('/store/orders');
+    await expect(page.getByRole('link', { name: /Nordhem/ }).first(), JSON.stringify(stored)).toBeVisible();
+    await page.goto('/store/cart');
+    await expect(page.getByRole('link', { name: /Nordhem/ }).first(), JSON.stringify(stored)).toBeVisible();
+  }
+  expect(errors).toEqual([]);
 });

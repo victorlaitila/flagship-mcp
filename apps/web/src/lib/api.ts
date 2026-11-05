@@ -68,8 +68,10 @@ export const api = {
   flag: (key: string) => request<FlagWithConfigs>(`/flags/${key}`),
   createFlag: (input: CreateFlagInput) => request<FlagWithConfigs>('/flags', { method: 'POST', body: input }),
   updateFlag: (key: string, input: UpdateFlagInput) => request<FlagWithConfigs>(`/flags/${key}`, { method: 'PATCH', body: input }),
-  archiveFlag: (key: string) => request<FlagWithConfigs>(`/flags/${key}/archive`, { method: 'POST' }),
-  restoreFlag: (key: string) => request<FlagWithConfigs>(`/flags/${key}/restore`, { method: 'POST' }),
+  archiveFlag: (key: string, confirmProduction = false) =>
+    request<FlagWithConfigs>(`/flags/${key}/archive`, { method: 'POST', body: { confirmProduction } }),
+  restoreFlag: (key: string, confirmProduction = false) =>
+    request<FlagWithConfigs>(`/flags/${key}/restore`, { method: 'POST', body: { confirmProduction } }),
   config: (key: string, env: Environment) => request<EnvironmentConfig>(`/flags/${key}/environments/${env}`),
   /** `expectedConfig` is the stored config the edit was based on; the API answers 409 CONFLICT if it changed since. */
   updateConfig: (key: string, env: Environment, config: EnvironmentConfig, expectedConfig: EnvironmentConfig, confirmProduction = false) =>

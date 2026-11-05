@@ -134,9 +134,28 @@ describe('flags and segments', () => {
 
   it('blocks archiving flags that are prerequisites of active flags', () => {
     expect(errorCode(() => setFlagStatus(ctx, admin, 'loyalty_program', 'archived'))).toBe('CONFLICT');
-    expect(setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived').status).toBe('archived');
+    expect(setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived', true).status).toBe('archived');
     expect(evaluateOne(ctx.db, 'free_shipping_banner', 'development', { userId: 'u_aino', country: 'FI', accountType: 'regular' }).reason)
       .toBe('FLAG_ARCHIVED');
+  });
+
+  it('requires Production confirmation to archive or restore a flag enabled in Production', () => {
+    expect(errorCode(() => setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived'))).toBe('CONFIRMATION_REQUIRED');
+    expect(getFlag(ctx, 'free_shipping_banner').status).toBe('active');
+    setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived', true);
+    expect(errorCode(() => setFlagStatus(ctx, admin, 'free_shipping_banner', 'active'))).toBe('CONFIRMATION_REQUIRED');
+    expect(setFlagStatus(ctx, admin, 'free_shipping_banner', 'active', true).status).toBe('active');
+    // loyalty_rewards is disabled in Production, so archiving it doesn't change Production.
+    expect(setFlagStatus(ctx, admin, 'loyalty_rewards', 'archived').status).toBe('archived');
+  });
+
+  it('blocks restoring a flag whose prerequisite is archived', () => {
+    setFlagStatus(ctx, admin, 'loyalty_rewards', 'archived');
+    setFlagStatus(ctx, admin, 'loyalty_program', 'archived', true);
+    expect(errorCode(() => setFlagStatus(ctx, admin, 'loyalty_rewards', 'active'))).toBe('CONFLICT');
+    expect(getFlag(ctx, 'loyalty_rewards').status).toBe('archived');
+    setFlagStatus(ctx, admin, 'loyalty_program', 'active', true);
+    expect(setFlagStatus(ctx, admin, 'loyalty_rewards', 'active').status).toBe('active');
   });
 
   it('blocks deleting referenced segments and reports references', () => {

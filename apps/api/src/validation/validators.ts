@@ -195,10 +195,13 @@ export function findCycle(
 ): string[] | null {
   const graph = new Map(prerequisitesByFlag);
   graph.set(flagKey, prerequisites);
+  // A flag already explored without reaching `flagKey` can't reach it via another path either.
+  const visited = new Set<string>();
   const walk = (key: string, path: string[]): string[] | null => {
     for (const next of graph.get(key) ?? []) {
       if (next === flagKey) return [...path, next];
-      if (path.includes(next)) continue;
+      if (visited.has(next)) continue;
+      visited.add(next);
       const found = walk(next, [...path, next]);
       if (found) return found;
     }

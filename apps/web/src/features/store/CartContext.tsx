@@ -42,12 +42,19 @@ export function useCart(): CartContextValue {
 
 const clampQuantity = (q: number) => Math.min(MAX_QUANTITY, Math.max(1, Math.round(q)));
 
+// Stored data can be outdated or hand-edited: drop entries that would crash rendering.
+const isStoredLine = (l: Partial<StoredLine> | null): l is StoredLine =>
+  typeof l?.productId === 'string' && typeof l.quantity === 'number';
+const isOrder = (o: Partial<Order> | null): o is Order =>
+  typeof o?.id === 'string' && typeof o.placedAt === 'string' && Array.isArray(o.lines) && o.lines.every(isStoredLine)
+  && typeof o.totals === 'object' && o.totals !== null && typeof o.address?.name === 'string';
+
 /** Cart and placed orders are client-side demo state, persisted to localStorage. */
 export function CartProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useState<StoredLine[]>(() =>
-    readStored<StoredLine[]>(CART_KEY, []).filter((l) => findProduct(l.productId) && l.quantity > 0),
+    readStored<StoredLine[]>(CART_KEY, []).filter((l) => isStoredLine(l) && findProduct(l.productId) && l.quantity > 0),
   );
-  const [orders, setOrders] = useState<Order[]>(() => readStored<Order[]>(ORDERS_KEY, []));
+  const [orders, setOrders] = useState<Order[]>(() => readStored<Order[]>(ORDERS_KEY, []).filter(isOrder));
 
   useEffect(() => { writeStored(CART_KEY, stored); }, [stored]);
   useEffect(() => { writeStored(ORDERS_KEY, orders); }, [orders]);
