@@ -1,6 +1,6 @@
 import { ROLE_ENVIRONMENTS, ROLE_LABELS, type Role } from '@flagship/shared';
 import { Flag, GitCompareArrows, History, LayoutDashboard, Menu, Store, Users, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { useActor } from '../hooks/useActor';
 import { useLiveStatus } from '../hooks/useLive';
@@ -82,6 +82,55 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+const SIDEBAR_KEY = 'flagship.sidebarWidth';
+const SIDEBAR = { default: 232, min: 200, max: 420 };
+const clampWidth = (w: number) => Math.min(SIDEBAR.max, Math.max(SIDEBAR.min, Math.round(w)));
+
+function useSidebarWidth() {
+  const [width, setWidth] = useState(() => {
+    try {
+      const stored = Number(localStorage.getItem(SIDEBAR_KEY));
+      return stored ? clampWidth(stored) : SIDEBAR.default;
+    } catch {
+      return SIDEBAR.default;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, String(width));
+    } catch { /* storage unavailable: the width just isn't remembered */ }
+  }, [width]);
+  return [width, (w: number) => setWidth(clampWidth(w))] as const;
+}
+
+/** Drag handle on the sidebar's right edge (desktop only). Arrow keys resize it too. */
+function SidebarResizer({ width, onResize }: { width: number; onResize: (width: number) => void }) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR.min}
+      aria-valuemax={SIDEBAR.max}
+      tabIndex={0}
+      onPointerDown={(e) => {
+        e.preventDefault(); // no text selection while dragging
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }}
+      // The sidebar starts at the left edge of the window, so the pointer's x is the new width.
+      onPointerMove={(e) => e.currentTarget.hasPointerCapture(e.pointerId) && onResize(e.clientX)}
+      onDoubleClick={() => onResize(SIDEBAR.default)}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowLeft') onResize(width - 16);
+        if (e.key === 'ArrowRight') onResize(width + 16);
+      }}
+      title="Drag to resize, double-click to reset"
+      className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize focus-visible:outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:transition-colors hover:after:bg-accent/70 focus-visible:after:bg-accent/70"
+    />
+  );
+}
+
 /** Shown only while live updates are down, so stale data is never presented as current without warning. */
 function LiveStatusNotice() {
   const status = useLiveStatus();
@@ -97,10 +146,13 @@ function LiveStatusNotice() {
 
 export function DashboardLayout() {
   const [open, setOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useSidebarWidth();
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[232px_1fr]">
+    // The grid only applies from `lg` up; below that the sidebar is a slide-in menu.
+    <div className="min-h-screen lg:grid" style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}>
       <aside className="sticky top-0 hidden h-screen border-r border-line bg-surface/50 lg:block">
         <Sidebar />
+        <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
       </aside>
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-canvas/90 px-4 py-2.5 backdrop-blur lg:hidden">
         <span className="flex items-center gap-2 font-semibold"><Flag className="size-4 text-accent" /> Flagship</span>

@@ -150,3 +150,30 @@ test('the store survives malformed saved data', async ({ page }) => {
   }
   expect(errors).toEqual([]);
 });
+
+test('the dashboard sidebar can be resized by dragging, and remembers its width', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/flags');
+  const sidebar = page.locator('aside').first();
+  const handle = page.getByRole('separator', { name: 'Resize sidebar' });
+  expect((await sidebar.boundingBox())!.width).toBeCloseTo(232, 0);
+
+  const box = (await handle.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(320, box.y + 220, { steps: 5 });
+  await page.mouse.up();
+  expect((await sidebar.boundingBox())!.width).toBeCloseTo(320, 0);
+
+  await page.mouse.move(box.x + box.width / 2 + 88, box.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(10, box.y + 200, { steps: 5 });
+  await page.mouse.up();
+  expect((await sidebar.boundingBox())!.width).toBeCloseTo(200, 0); // clamped to the minimum
+
+  await handle.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.reload();
+  expect((await page.locator('aside').first().boundingBox())!.width).toBeCloseTo(216, 0);
+  await page.evaluate(() => localStorage.removeItem('flagship.sidebarWidth'));
+});
