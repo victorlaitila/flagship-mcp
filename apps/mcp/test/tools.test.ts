@@ -170,6 +170,7 @@ describe('planning', () => {
     });
     expect(data.valid).toBe(false);
     expect(data.validationIssues[0].path).toBe('variantWeights');
+    expect(data.permission).toMatchObject({ canApply: false, reason: expect.stringContaining('invalid') });
     expect(data).not.toHaveProperty('applyWith');
   });
 

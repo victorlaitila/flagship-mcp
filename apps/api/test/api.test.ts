@@ -57,6 +57,33 @@ describe('REST API', () => {
     expect(invalid.body.error.issues[0]).toMatchObject({ path: 'variantWeights' });
   });
 
+  it('answers an oversized body with 413, not an internal error', async () => {
+    const big = await call('/flags/new_search', { method: 'PATCH', actor: 'sara', json: { description: 'x'.repeat(1_100_000) } });
+    expect(big).toMatchObject({ status: 413, body: { error: { code: 'PAYLOAD_TOO_LARGE' } } });
+  });
+
+  it('does not advertise Express', async () => {
+    expect((await call('/health')).headers.get('x-powered-by')).toBeNull();
+  });
+
+  it('rejects unknown metadata fields and audits only real metadata changes', async () => {
+    const audited = async () => (await call('/audit?flagKey=loyalty_rewards&operation=flag.updated')).body.length;
+    const before = (await call('/flags/loyalty_rewards')).body;
+
+    const unknown = await call('/flags/loyalty_rewards', { method: 'PATCH', actor: 'sara', json: { nmae: 'Typo' } });
+    expect(unknown).toMatchObject({ status: 422, body: { error: { code: 'VALIDATION_FAILED', issues: [{ path: 'nmae' }] } } });
+
+    const same = await call('/flags/loyalty_rewards', { method: 'PATCH', actor: 'sara',
+      json: { name: before.name, description: before.description, owner: before.owner, tags: before.tags } });
+    expect(same.status).toBe(200);
+    expect(same.body.updatedAt).toBe(before.updatedAt);
+    expect(await audited()).toBe(0);
+
+    const changed = await call('/flags/loyalty_rewards', { method: 'PATCH', actor: 'sara', json: { owner: 'Retention Team' } });
+    expect(changed.body.owner).toBe('Retention Team');
+    expect(await audited()).toBe(1);
+  });
+
   it('updates a config, audits it and rolls it back over HTTP', async () => {
     const { body: current } = await call('/flags/new_search/environments/production');
     const forbidden = await call('/flags/new_search/environments/production', { method: 'PUT', actor: 'ida', json: { config: current } });

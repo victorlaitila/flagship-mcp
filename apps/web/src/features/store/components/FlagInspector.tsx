@@ -8,6 +8,7 @@ export function FlagInspector() {
   const [open, setOpen] = useState(false);
   const { evaluations, user, environment } = useStore();
   const results = evaluations ? [...evaluations.values()] : [];
+  const active = results.filter((r) => r.reason !== 'FLAG_ARCHIVED');
 
   return (
     <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2">
@@ -56,7 +57,7 @@ export function FlagInspector() {
         <Flag className="size-3.5 text-emerald-400" />
         Flags
         <span className="rounded-full bg-stone-700 px-1.5 text-[10px] text-stone-300">
-          {results.filter((r) => r.enabled).length}/{results.length}
+          {active.filter((r) => r.enabled).length}/{active.length}
         </span>
       </button>
     </div>

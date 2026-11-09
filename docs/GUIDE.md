@@ -27,7 +27,7 @@ The **storefront** (a fake Nordic homeware shop, "Nordhem") asks the API how eve
 
 **Storefront**
 - The dark **context bar** at the top chooses the demo customer and the environment the shop evaluates against. "Live flags" (green) means it is receiving live updates.
-- The floating **Flags** button opens an inspector: every flag's result for the current customer, with its reason.
+- The floating **Flags** button opens an inspector: every flag's result for the current customer, with its reason. Its counter (enabled/total) leaves out archived flags.
 - Five demo customers:
 
 | Customer | Country | Account | Notes |

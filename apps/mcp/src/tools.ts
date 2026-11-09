@@ -316,10 +316,13 @@ If the plan is valid and permitted, the result contains "applyWith": the exact a
       requested = { ...current, ...(args.changes as Changes) };
     }
 
-    const [preview, permission] = await Promise.all([
+    const [preview, allowed] = await Promise.all([
       api.request<PreviewResult>('POST', `${path}/preview`, { config: requested }).then((r) => r.body),
       permissionFor(args.environment),
     ]);
+    const permission = preview.valid || !allowed.canApply
+      ? allowed
+      : { canApply: false, reason: `The proposal is invalid; fix the validationIssues first. ${allowed.reason}` };
     // Show what the backend would actually store (it drops fields that do not apply to the flag type, rounds rollouts).
     const proposed = preview.config ?? requested;
     const diff = diffConfigs(current, proposed);

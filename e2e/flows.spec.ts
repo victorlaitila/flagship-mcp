@@ -131,6 +131,19 @@ test('archiving a flag enabled in Production asks for confirmation', async ({ pa
   }
 });
 
+test('the store flag counter leaves out archived flags', async ({ page, request }) => {
+  try {
+    await page.goto('/store');
+    const counter = page.getByRole('button', { name: /^Flags/ });
+    await expect(counter).toHaveText(/\/10$/);
+    const res = await request.post('/api/flags/free_shipping_banner/archive', { headers: ADMIN, data: { confirmProduction: true } });
+    expect(res.ok(), await res.text()).toBe(true);
+    await expect(counter).toHaveText(/\/9$/);
+  } finally {
+    await request.post('/api/flags/free_shipping_banner/restore', { headers: ADMIN, data: { confirmProduction: true } });
+  }
+});
+
 test('the store survives malformed saved data', async ({ page }) => {
   const cases: Record<string, string>[] = [
     { 'nordhem.cart': 'null' },

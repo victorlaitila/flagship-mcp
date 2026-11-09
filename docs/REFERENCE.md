@@ -78,13 +78,13 @@ Rules enforced by the API:
 
 ## REST API
 
-JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "details?" } }`. Validation errors return 422 with `issues: [{ path, message }]`. Mutations need `X-Actor-Id`.
+JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "details?" } }`. Validation errors return 422 with `issues: [{ path, message }]`. Bodies over 1 MB return 413 (`PAYLOAD_TOO_LARGE`). Mutations need `X-Actor-Id`.
 
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/flags` | All flags with their configs for every environment |
 | POST | `/api/flags` | Create (`key, name, description, type, owner, tags, variants?`) |
-| GET / PATCH | `/api/flags/:key` | Read / edit metadata |
+| GET / PATCH | `/api/flags/:key` | Read / edit metadata (`name, description, owner, tags`; other fields return 422) |
 | POST | `/api/flags/:key/archive`, `/restore` | Admin only. `{ confirmProduction? }`, required when the flag is enabled in Production |
 | GET / PUT | `/api/flags/:key/environments/:env` | PUT `{ config, expectedConfig?, confirmProduction? }`. Header `X-Audit-Id` names the entry written. |
 | POST | `/api/flags/:key/environments/:env/preview` | `{ config, userIds? }` → `valid`, `issues`, normalized `config`, and current vs proposed result per demo user. Saves nothing. |
@@ -118,7 +118,7 @@ JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "d
 | `get_feature_flag` | One flag in full: config, variants, fallback behaviour, recent history |
 | `compare_environments` | Field-level differences between two environments (default Staging vs Production) |
 | `evaluate_flags` | What a demo customer, or any user context, gets, with reason and explanation |
-| `plan_configuration_change` | Dry run of `changes`, or of restoring the config before an audit entry. Shows the change as the backend would store it (with `adjustedByBackend` when values are dropped or rounded), validation issues, affected demo customers, and permission. If applicable, returns `applyWith`. |
+| `plan_configuration_change` | Dry run of `changes`, or of restoring the config before an audit entry. Shows the change as the backend would store it (with `adjustedByBackend` when values are dropped or rounded), validation issues, affected demo customers, and permission (`canApply` is false for an invalid proposal). If applicable, returns `applyWith`. |
 | `apply_configuration_change` | Applies a plan. Requires the plan's `planRevision`, a hash of flag, environment, base config and exact changes; any difference is rejected. |
 | `get_audit_history` | Audit log with field-level before/after |
 | `rollback_configuration_change` | Rolls back a planned restore. Requires its `planRevision` and is rejected if the config changed since planning. |
@@ -146,7 +146,7 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 | API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity), HTTP integration including SSE |
 | MCP | `apps/mcp/test` | Every tool through the SDK client against a real in-process API: plan/apply binding, normalization, stale plans, Production refusal, failure modes. `stdio.test.ts` also starts the real server process over stdio, as Claude Code does. |
 | Web | `apps/web/test` | Live-update connection: backoff, reconnect, resync, dead-stream detection |
-| E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, archiving in Production, malformed storefront data, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |
+| E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, archiving in Production, the store flag counter, malformed storefront data, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |
 
 Playwright starts its own API (port 4100, throwaway database) and web server (5174), so a running `npm run dev` and its database are never touched. The restart test starts a further pair (4120/5181) that it can stop and start. Tests run serially, and each restores what it changes.
 

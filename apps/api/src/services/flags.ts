@@ -75,6 +75,8 @@ export function updateFlag(ctx: ServiceContext, actor: Actor, key: string, input
   const flag = requireFlag(ctx, key);
   const { value, issues } = validateUpdateFlag(input);
   if (!value) throw invalid(issues);
+  // An unchanged save writes nothing, as for configs.
+  if (Object.entries(value).every(([field, v]) => isDeepStrictEqual(flag[field as keyof Flag], v))) return getFlag(ctx, key);
   const next: Flag = { ...flag, ...value, updatedAt: ctx.now().toISOString() };
   const auditId = transaction(ctx.db, () => {
     repo.updateFlag(ctx.db, next);

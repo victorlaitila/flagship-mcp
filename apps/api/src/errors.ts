@@ -8,6 +8,7 @@ const STATUS: Record<ErrorCode, number> = {
   CONFIRMATION_REQUIRED: 428,
   NOT_FOUND: 404,
   CONFLICT: 409,
+  PAYLOAD_TOO_LARGE: 413,
   INTERNAL: 500,
 };
 

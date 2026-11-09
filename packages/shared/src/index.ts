@@ -262,6 +262,7 @@ export type ErrorCode =
   | 'CONFIRMATION_REQUIRED'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'PAYLOAD_TOO_LARGE'
   | 'INTERNAL';
 
 export interface ApiErrorBody {

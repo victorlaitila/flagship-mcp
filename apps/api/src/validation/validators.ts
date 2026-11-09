@@ -267,6 +267,11 @@ export function validateUpdateFlag(input: unknown): Validated<UpdateFlagInput> {
   const issues: Issues = [];
   if (!isRecord(input)) return { value: null, issues: [{ path: '', message: 'Body must be an object.' }] };
   const value: UpdateFlagInput = {};
+  for (const field of Object.keys(input)) {
+    if (!['name', 'description', 'owner', 'tags'].includes(field)) {
+      issues.push({ path: field, message: `Unknown field "${field}". Editable fields are name, description, owner and tags.` });
+    }
+  }
   if (input.name !== undefined) {
     if (!nonEmpty(input.name)) issues.push({ path: 'name', message: 'Name cannot be empty.' });
     else value.name = input.name.trim();
