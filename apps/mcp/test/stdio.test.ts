@@ -40,7 +40,7 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
 const api = async (path: string) => (await fetch(`${apiUrl}/api${path}`)).json();
 
 beforeAll(async () => {
-  httpServer = createApp(seededContext()).listen(0);
+  httpServer = createApp(await seededContext()).listen(0);
   await new Promise((resolve) => httpServer.once('listening', resolve));
   apiUrl = `http://localhost:${(httpServer.address() as AddressInfo).port}`;
 });

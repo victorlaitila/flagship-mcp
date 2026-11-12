@@ -1,17 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { ENVIRONMENTS, type Actor, type Segment, type SegmentReference, type SegmentWithUsage } from '@flagship/shared';
-import { transaction } from '../database/db.js';
+import { ENVIRONMENTS, type Actor, type FlagWithConfigs, type Segment, type SegmentReference, type SegmentWithUsage } from '@flagship/shared';
 import { DEMO_USERS } from '../demo.js';
 import { AppError, invalid, notFound } from '../errors.js';
 import { userInSegment } from '../evaluation/engine.js';
-import { insertAuditEntry } from '../repositories/audit.js';
-import { listFlagsWithConfigs } from '../repositories/flags.js';
-import * as repo from '../repositories/segments.js';
 import { validateSegment } from '../validation/validators.js';
 import { assertCanManageGlobal, type ServiceContext } from './context.js';
 
-function findReferences(ctx: ServiceContext, segmentKey: string): SegmentReference[] {
-  return listFlagsWithConfigs(ctx.db).flatMap((flag) =>
+function findReferences(flags: FlagWithConfigs[], segmentKey: string): SegmentReference[] {
+  return flags.flatMap((flag) =>
     ENVIRONMENTS.flatMap((environment) =>
       flag.environments[environment].rules
         .filter((rule) => rule.conditions.some((c) => c.attribute === 'segment' && c.values.includes(segmentKey)))
@@ -20,66 +16,61 @@ function findReferences(ctx: ServiceContext, segmentKey: string): SegmentReferen
   );
 }
 
-const withUsage = (ctx: ServiceContext, segment: Segment): SegmentWithUsage => ({
+const withUsage = (segment: Segment, flags: FlagWithConfigs[]): SegmentWithUsage => ({
   ...segment,
   matchingDemoUserIds: DEMO_USERS.filter((u) => userInSegment(segment, u)).map((u) => u.userId),
-  references: findReferences(ctx, segment.key),
+  references: findReferences(flags, segment.key),
 });
 
-export function listSegments(ctx: ServiceContext): SegmentWithUsage[] {
-  return repo.listSegments(ctx.db).map((s) => withUsage(ctx, s));
+export async function listSegments(ctx: ServiceContext): Promise<SegmentWithUsage[]> {
+  const [segments, flags] = await Promise.all([ctx.store.listSegments(), ctx.store.listFlagsWithConfigs()]);
+  return segments.map((s) => withUsage(s, flags));
 }
 
-function requireSegment(ctx: ServiceContext, key: string): Segment {
-  const segment = repo.getSegment(ctx.db, key);
+async function requireSegment(ctx: ServiceContext, key: string): Promise<Segment> {
+  const segment = await ctx.store.getSegment(key);
   if (!segment) throw notFound(`Segment "${key}"`);
   return segment;
 }
 
-export function getSegment(ctx: ServiceContext, key: string): SegmentWithUsage {
-  return withUsage(ctx, requireSegment(ctx, key));
+export async function getSegment(ctx: ServiceContext, key: string): Promise<SegmentWithUsage> {
+  return withUsage(await requireSegment(ctx, key), await ctx.store.listFlagsWithConfigs());
 }
 
-export function createSegment(ctx: ServiceContext, actor: Actor, input: unknown): SegmentWithUsage {
+export async function createSegment(ctx: ServiceContext, actor: Actor, input: unknown): Promise<SegmentWithUsage> {
   assertCanManageGlobal(actor, 'manage segments (they apply to every environment)');
-  const existing = new Set(repo.listSegments(ctx.db).map((s) => s.key));
+  const existing = new Set((await ctx.store.listSegments()).map((s) => s.key));
   const { value, issues } = validateSegment(input, existing, null);
   if (!value) throw invalid(issues);
   const timestamp = ctx.now().toISOString();
   const segment: Segment = { id: randomUUID(), ...value, createdAt: timestamp, updatedAt: timestamp };
-  const auditId = transaction(ctx.db, () => {
-    repo.upsertSegment(ctx.db, segment);
-    return insertAuditEntry(ctx.db, { timestamp, actor, operation: 'segment.created', segmentKey: segment.key, previous: null, next: segment });
-  });
+  const auditId = await ctx.store.commit([{ type: 'putSegment', segment }],
+    { timestamp, actor, operation: 'segment.created', segmentKey: segment.key, previous: null, next: segment });
   ctx.notifier.publish({ entity: 'segment', segmentKey: segment.key, auditId });
-  return withUsage(ctx, segment);
+  return withUsage(segment, await ctx.store.listFlagsWithConfigs());
 }
 
-export function updateSegment(ctx: ServiceContext, actor: Actor, key: string, input: unknown): SegmentWithUsage {
+export async function updateSegment(ctx: ServiceContext, actor: Actor, key: string, input: unknown): Promise<SegmentWithUsage> {
   assertCanManageGlobal(actor, 'manage segments (they apply to every environment)');
-  const previous = requireSegment(ctx, key);
+  const previous = await requireSegment(ctx, key);
   const { value, issues } = validateSegment(input, new Set(), key);
   if (!value) throw invalid(issues);
   const next: Segment = { ...previous, ...value, key, updatedAt: ctx.now().toISOString() };
-  const auditId = transaction(ctx.db, () => {
-    repo.upsertSegment(ctx.db, next);
-    return insertAuditEntry(ctx.db, { timestamp: next.updatedAt, actor, operation: 'segment.updated', segmentKey: key, previous, next });
-  });
+  const auditId = await ctx.store.commit([{ type: 'putSegment', segment: next }],
+    { timestamp: next.updatedAt, actor, operation: 'segment.updated', segmentKey: key, previous, next });
   ctx.notifier.publish({ entity: 'segment', segmentKey: key, auditId });
-  return withUsage(ctx, next);
+  return withUsage(next, await ctx.store.listFlagsWithConfigs());
 }
 
 /** Referenced segments cannot be deleted: rules would silently stop matching. */
-export function deleteSegment(ctx: ServiceContext, actor: Actor, key: string): void {
+export async function deleteSegment(ctx: ServiceContext, actor: Actor, key: string): Promise<void> {
   assertCanManageGlobal(actor, 'manage segments (they apply to every environment)');
-  const segment = requireSegment(ctx, key);
-  const refs = findReferences(ctx, key);
+  const segment = await requireSegment(ctx, key);
+  const refs = findReferences(await ctx.store.listFlagsWithConfigs(), key);
   if (refs.length > 0) {
     throw new AppError('CONFLICT', `Segment "${key}" is used by ${refs.length} targeting rule(s). Remove those rules first.`, undefined, { references: refs });
   }
-  const auditId = transaction(ctx.db, () => {
-    repo.deleteSegment(ctx.db, segment.id);
-    return insertAuditEntry(ctx.db, { timestamp: ctx.now().toISOString(), actor, operation: 'segment.deleted', segmentKey: key, previous: segment, next: null });
-  });
+  const auditId = await ctx.store.commit([{ type: 'deleteSegment', segment }],
+    { timestamp: ctx.now().toISOString(), actor, operation: 'segment.deleted', segmentKey: key, previous: segment, next: null });
   ctx.notifier.publish({ entity: 'segment', segmentKey: key, auditId });
 }

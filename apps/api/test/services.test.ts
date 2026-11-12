@@ -1,4 +1,4 @@
-import type { ChangeEvent, EnvironmentConfig } from '@flagship/shared';
+import type { ChangeEvent, EnvironmentConfig, Segment } from '@flagship/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AppError } from '../src/errors.js';
 import { listAudit, rollback } from '../src/services/audit.js';
@@ -9,207 +9,210 @@ import { deleteSegment, listSegments, updateSegment } from '../src/services/segm
 import { admin, developer, releaseManager, seededContext } from './helpers.js';
 
 let ctx: ServiceContext;
-beforeEach(() => {
-  ctx = seededContext();
+beforeEach(async () => {
+  ctx = await seededContext();
 });
 
-const errorCode = (fn: () => unknown) => {
+const errorCode = async (promise: Promise<unknown>) => {
   try {
-    fn();
+    await promise;
   } catch (e) {
     return (e as AppError).code;
   }
   return null;
 };
-const config = (key: string, env: 'development' | 'staging' | 'production') => getFlag(ctx, key).environments[env];
+const config = async (key: string, env: 'development' | 'staging' | 'production') => (await getFlag(ctx, key)).environments[env];
 
 describe('permissions', () => {
-  const disable = (env: 'development' | 'staging' | 'production') => ({ ...config('loyalty_program', env), enabled: false });
+  const disable = async (env: 'development' | 'staging' | 'production') => ({ ...(await config('loyalty_program', env)), enabled: false });
 
-  it('lets developers manage only development', () => {
-    expect(errorCode(() => applyConfig(ctx, developer, 'loyalty_program', 'development', disable('development'), false))).toBeNull();
-    expect(errorCode(() => applyConfig(ctx, developer, 'loyalty_program', 'staging', disable('staging'), false))).toBe('FORBIDDEN');
-    expect(errorCode(() => applyConfig(ctx, developer, 'loyalty_program', 'production', disable('production'), true))).toBe('FORBIDDEN');
+  it('lets developers manage only development', async () => {
+    expect(await errorCode(applyConfig(ctx, developer, 'loyalty_program', 'development', await disable('development'), false))).toBeNull();
+    expect(await errorCode(applyConfig(ctx, developer, 'loyalty_program', 'staging', await disable('staging'), false))).toBe('FORBIDDEN');
+    expect(await errorCode(applyConfig(ctx, developer, 'loyalty_program', 'production', await disable('production'), true))).toBe('FORBIDDEN');
   });
 
-  it('lets release managers manage development and staging', () => {
-    expect(errorCode(() => applyConfig(ctx, releaseManager, 'loyalty_program', 'staging', disable('staging'), false))).toBeNull();
-    expect(errorCode(() => applyConfig(ctx, releaseManager, 'loyalty_program', 'production', disable('production'), true))).toBe('FORBIDDEN');
+  it('lets release managers manage development and staging', async () => {
+    expect(await errorCode(applyConfig(ctx, releaseManager, 'loyalty_program', 'staging', await disable('staging'), false))).toBeNull();
+    expect(await errorCode(applyConfig(ctx, releaseManager, 'loyalty_program', 'production', await disable('production'), true))).toBe('FORBIDDEN');
   });
 
-  it('requires explicit confirmation for production, even for admins', () => {
-    expect(errorCode(() => applyConfig(ctx, admin, 'loyalty_program', 'production', disable('production'), undefined))).toBe('CONFIRMATION_REQUIRED');
-    expect(config('loyalty_program', 'production').enabled).toBe(true);
-    applyConfig(ctx, admin, 'loyalty_program', 'production', disable('production'), true);
-    expect(config('loyalty_program', 'production').enabled).toBe(false);
+  it('requires explicit confirmation for production, even for admins', async () => {
+    expect(await errorCode(applyConfig(ctx, admin, 'loyalty_program', 'production', await disable('production'), undefined))).toBe('CONFIRMATION_REQUIRED');
+    expect((await config('loyalty_program', 'production')).enabled).toBe(true);
+    await applyConfig(ctx, admin, 'loyalty_program', 'production', await disable('production'), true);
+    expect((await config('loyalty_program', 'production')).enabled).toBe(false);
   });
 
-  it('restricts archiving and segment edits to admins', () => {
-    expect(errorCode(() => setFlagStatus(ctx, releaseManager, 'free_shipping_banner', 'archived'))).toBe('FORBIDDEN');
-    expect(errorCode(() => updateSegment(ctx, developer, 'beta_testers', { name: 'x', conditions: [] }))).toBe('FORBIDDEN');
+  it('restricts archiving and segment edits to admins', async () => {
+    expect(await errorCode(setFlagStatus(ctx, releaseManager, 'free_shipping_banner', 'archived'))).toBe('FORBIDDEN');
+    expect(await errorCode(updateSegment(ctx, developer, 'beta_testers', { name: 'x', conditions: [] }))).toBe('FORBIDDEN');
   });
 });
 
 describe('config updates', () => {
-  it('rejects invalid configs without persisting', () => {
-    const before = config('ai_recommendations', 'development');
-    expect(errorCode(() => applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...before, rolloutPercentage: 150 }, false)))
+  it('rejects invalid configs without persisting', async () => {
+    const before = await config('ai_recommendations', 'development');
+    expect(await errorCode(applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...before, rolloutPercentage: 150 }, false)))
       .toBe('VALIDATION_FAILED');
-    expect(config('ai_recommendations', 'development')).toEqual(before);
+    expect(await config('ai_recommendations', 'development')).toEqual(before);
   });
 
-  it('prevents circular prerequisites across flags', () => {
-    const payment = config('new_payment_api', 'development');
-    expect(errorCode(() => applyConfig(ctx, developer, 'new_payment_api', 'development', { ...payment, prerequisites: ['new_checkout'] }, false)))
+  it('prevents circular prerequisites across flags', async () => {
+    const payment = await config('new_payment_api', 'development');
+    expect(await errorCode(applyConfig(ctx, developer, 'new_payment_api', 'development', { ...payment, prerequisites: ['new_checkout'] }, false)))
       .toBe('VALIDATION_FAILED');
   });
 
-  it('changes evaluation for the storefront and notifies listeners', () => {
+  it('changes evaluation for the storefront and notifies listeners', async () => {
     const events: ChangeEvent[] = [];
     ctx.notifier.subscribe((e) => events.push(e));
-    expect(evaluateOne(ctx.db, 'loyalty_program', 'development', { userId: 'u_emma', country: 'US', accountType: 'regular' }).enabled).toBe(true);
-    applyConfig(ctx, developer, 'loyalty_program', 'development', { ...config('loyalty_program', 'development'), enabled: false }, false);
-    const result = evaluateOne(ctx.db, 'loyalty_rewards', 'development', { userId: 'u_emma', country: 'US', accountType: 'regular' });
+    expect((await evaluateOne(ctx.store, 'loyalty_program', 'development', { userId: 'u_emma', country: 'US', accountType: 'regular' })).enabled).toBe(true);
+    await applyConfig(ctx, developer, 'loyalty_program', 'development', { ...(await config('loyalty_program', 'development')), enabled: false }, false);
+    const result = await evaluateOne(ctx.store, 'loyalty_rewards', 'development', { userId: 'u_emma', country: 'US', accountType: 'regular' });
     expect(result).toMatchObject({ enabled: false, reason: 'PREREQUISITE_FAILED' });
     expect(events).toEqual([expect.objectContaining({ entity: 'config', flagKey: 'loyalty_program', environment: 'development' })]);
   });
 
-  it('writes no audit entry when nothing changed', () => {
-    const count = listAudit(ctx, {}).length;
-    applyConfig(ctx, developer, 'loyalty_program', 'development', config('loyalty_program', 'development'), false);
-    expect(listAudit(ctx, {}).length).toBe(count);
+  it('writes no audit entry when nothing changed', async () => {
+    const count = (await listAudit(ctx, {})).length;
+    await applyConfig(ctx, developer, 'loyalty_program', 'development', await config('loyalty_program', 'development'), false);
+    expect((await listAudit(ctx, {})).length).toBe(count);
   });
 });
 
 describe('audit and rollback', () => {
-  it('records previous and new configuration for every change', () => {
-    const previous = config('ai_recommendations', 'staging');
-    applyConfig(ctx, releaseManager, 'ai_recommendations', 'staging', { ...previous, rolloutPercentage: 75 }, false);
-    const [entry] = listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'staging' });
+  it('records previous and new configuration for every change', async () => {
+    const previous = await config('ai_recommendations', 'staging');
+    await applyConfig(ctx, releaseManager, 'ai_recommendations', 'staging', { ...previous, rolloutPercentage: 75 }, false);
+    const [entry] = await listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'staging' });
     expect(entry).toMatchObject({
       operation: 'config.updated', actorId: releaseManager.id, actorRole: 'release_manager', previous,
       next: { ...previous, rolloutPercentage: 75 },
     });
   });
 
-  it('restores the previous config as a new entry and keeps history intact', () => {
-    const original = config('ai_recommendations', 'development');
-    applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...original, rolloutPercentage: 5 }, false);
-    const [change] = listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'development' });
-    const historyBefore = listAudit(ctx, {});
+  it('restores the previous config as a new entry and keeps history intact', async () => {
+    const original = await config('ai_recommendations', 'development');
+    await applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...original, rolloutPercentage: 5 }, false);
+    const [change] = await listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'development' });
+    const historyBefore = await listAudit(ctx, {});
 
-    rollback(ctx, developer, change.id, false);
+    await rollback(ctx, developer, change.id, false);
 
-    expect(config('ai_recommendations', 'development')).toEqual(original);
-    const historyAfter = listAudit(ctx, {});
+    expect(await config('ai_recommendations', 'development')).toEqual(original);
+    const historyAfter = await listAudit(ctx, {});
     expect(historyAfter.length).toBe(historyBefore.length + 1);
     expect(historyAfter.slice(1)).toEqual(historyBefore);
     expect(historyAfter[0]).toMatchObject({ operation: 'config.rolled_back', rollbackOf: change.id, previous: { rolloutPercentage: 5 }, next: original });
   });
 
-  it('applies permissions and confirmation to rollbacks', () => {
-    const [seeded] = listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'production' });
-    expect(errorCode(() => rollback(ctx, releaseManager, seeded.id, true))).toBe('FORBIDDEN');
-    expect(errorCode(() => rollback(ctx, admin, seeded.id, false))).toBe('CONFIRMATION_REQUIRED');
-    rollback(ctx, admin, seeded.id, true);
-    expect(config('ai_recommendations', 'production').rolloutPercentage).toBe(10);
+  it('applies permissions and confirmation to rollbacks', async () => {
+    const [seeded] = await listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'production' });
+    expect(await errorCode(rollback(ctx, releaseManager, seeded.id, true))).toBe('FORBIDDEN');
+    expect(await errorCode(rollback(ctx, admin, seeded.id, false))).toBe('CONFIRMATION_REQUIRED');
+    await rollback(ctx, admin, seeded.id, true);
+    expect((await config('ai_recommendations', 'production')).rolloutPercentage).toBe(10);
   });
 
-  it('refuses to roll back non-config entries or no-op rollbacks', () => {
-    const [created] = listAudit(ctx, { operation: 'flag.created', limit: 1 });
-    expect(errorCode(() => rollback(ctx, admin, created.id, true))).toBe('BAD_REQUEST');
-    const [seeded] = listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'production' });
-    rollback(ctx, admin, seeded.id, true);
-    expect(errorCode(() => rollback(ctx, admin, seeded.id, true))).toBe('CONFLICT');
+  it('refuses to roll back non-config entries or no-op rollbacks', async () => {
+    const [created] = await listAudit(ctx, { operation: 'flag.created', limit: 1 });
+    expect(await errorCode(rollback(ctx, admin, created.id, true))).toBe('BAD_REQUEST');
+    const [seeded] = await listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'production' });
+    await rollback(ctx, admin, seeded.id, true);
+    expect(await errorCode(rollback(ctx, admin, seeded.id, true))).toBe('CONFLICT');
   });
 });
 
 describe('flags and segments', () => {
-  it('creates flags disabled in every environment', () => {
-    const flag = createFlag(ctx, developer, { key: 'dark_mode', name: 'Dark mode', type: 'boolean', owner: 'Web', tags: ['UI'] });
+  it('creates flags disabled in every environment', async () => {
+    const flag = await createFlag(ctx, developer, { key: 'dark_mode', name: 'Dark mode', type: 'boolean', owner: 'Web', tags: ['UI'] });
     expect(Object.values(flag.environments).every((c: EnvironmentConfig) => !c.enabled)).toBe(true);
     expect(flag.tags).toEqual(['ui']);
-    expect(errorCode(() => createFlag(ctx, developer, { key: 'dark_mode', name: 'x', type: 'boolean', owner: 'x' }))).toBe('VALIDATION_FAILED');
+    expect(await errorCode(createFlag(ctx, developer, { key: 'dark_mode', name: 'x', type: 'boolean', owner: 'x' }))).toBe('VALIDATION_FAILED');
   });
 
-  it('blocks archiving flags that are prerequisites of active flags', () => {
-    expect(errorCode(() => setFlagStatus(ctx, admin, 'loyalty_program', 'archived'))).toBe('CONFLICT');
-    expect(setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived', true).status).toBe('archived');
-    expect(evaluateOne(ctx.db, 'free_shipping_banner', 'development', { userId: 'u_aino', country: 'FI', accountType: 'regular' }).reason)
+  it('blocks archiving flags that are prerequisites of active flags', async () => {
+    expect(await errorCode(setFlagStatus(ctx, admin, 'loyalty_program', 'archived'))).toBe('CONFLICT');
+    expect((await setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived', true)).status).toBe('archived');
+    expect((await evaluateOne(ctx.store, 'free_shipping_banner', 'development', { userId: 'u_aino', country: 'FI', accountType: 'regular' })).reason)
       .toBe('FLAG_ARCHIVED');
   });
 
-  it('requires Production confirmation to archive or restore a flag enabled in Production', () => {
-    expect(errorCode(() => setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived'))).toBe('CONFIRMATION_REQUIRED');
-    expect(getFlag(ctx, 'free_shipping_banner').status).toBe('active');
-    setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived', true);
-    expect(errorCode(() => setFlagStatus(ctx, admin, 'free_shipping_banner', 'active'))).toBe('CONFIRMATION_REQUIRED');
-    expect(setFlagStatus(ctx, admin, 'free_shipping_banner', 'active', true).status).toBe('active');
+  it('requires Production confirmation to archive or restore a flag enabled in Production', async () => {
+    expect(await errorCode(setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived'))).toBe('CONFIRMATION_REQUIRED');
+    expect((await getFlag(ctx, 'free_shipping_banner')).status).toBe('active');
+    await setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived', true);
+    expect(await errorCode(setFlagStatus(ctx, admin, 'free_shipping_banner', 'active'))).toBe('CONFIRMATION_REQUIRED');
+    expect((await setFlagStatus(ctx, admin, 'free_shipping_banner', 'active', true)).status).toBe('active');
     // loyalty_rewards is disabled in Production, so archiving it doesn't change Production.
-    expect(setFlagStatus(ctx, admin, 'loyalty_rewards', 'archived').status).toBe('archived');
+    expect((await setFlagStatus(ctx, admin, 'loyalty_rewards', 'archived')).status).toBe('archived');
   });
 
-  it('blocks restoring a flag whose prerequisite is archived', () => {
-    setFlagStatus(ctx, admin, 'loyalty_rewards', 'archived');
-    setFlagStatus(ctx, admin, 'loyalty_program', 'archived', true);
-    expect(errorCode(() => setFlagStatus(ctx, admin, 'loyalty_rewards', 'active'))).toBe('CONFLICT');
-    expect(getFlag(ctx, 'loyalty_rewards').status).toBe('archived');
-    setFlagStatus(ctx, admin, 'loyalty_program', 'active', true);
-    expect(setFlagStatus(ctx, admin, 'loyalty_rewards', 'active').status).toBe('active');
+  it('blocks restoring a flag whose prerequisite is archived', async () => {
+    await setFlagStatus(ctx, admin, 'loyalty_rewards', 'archived');
+    await setFlagStatus(ctx, admin, 'loyalty_program', 'archived', true);
+    expect(await errorCode(setFlagStatus(ctx, admin, 'loyalty_rewards', 'active'))).toBe('CONFLICT');
+    expect((await getFlag(ctx, 'loyalty_rewards')).status).toBe('archived');
+    await setFlagStatus(ctx, admin, 'loyalty_program', 'active', true);
+    expect((await setFlagStatus(ctx, admin, 'loyalty_rewards', 'active')).status).toBe('active');
   });
 
-  it('blocks deleting referenced segments and reports references', () => {
-    const beta = listSegments(ctx).find((s) => s.key === 'beta_testers')!;
+  it('blocks deleting referenced segments and reports references', async () => {
+    const beta = (await listSegments(ctx)).find((s) => s.key === 'beta_testers')!;
     expect(beta.references.length).toBeGreaterThan(0);
     expect(beta.matchingDemoUserIds).toEqual(['u_sanna', 'u_jonas']);
-    expect(errorCode(() => deleteSegment(ctx, admin, 'beta_testers'))).toBe('CONFLICT');
+    expect(await errorCode(deleteSegment(ctx, admin, 'beta_testers'))).toBe('CONFLICT');
   });
 
-  it('previews changes without persisting them', () => {
-    const current = config('ai_recommendations', 'production');
-    const preview = previewConfig(ctx, 'ai_recommendations', 'production', { ...current, rolloutPercentage: 100 });
+  it('previews changes without persisting them', async () => {
+    const current = await config('ai_recommendations', 'production');
+    const preview = await previewConfig(ctx, 'ai_recommendations', 'production', { ...current, rolloutPercentage: 100 });
     expect(preview.valid).toBe(true);
     expect(preview.results.filter((r) => r.changed).map((r) => r.user.userId)).toEqual(['u_aino', 'u_eero', 'u_jonas']);
-    expect(config('ai_recommendations', 'production')).toEqual(current);
-    const invalidPreview = previewConfig(ctx, 'ai_recommendations', 'production', { ...current, rolloutPercentage: -5 });
+    expect(await config('ai_recommendations', 'production')).toEqual(current);
+    const invalidPreview = await previewConfig(ctx, 'ai_recommendations', 'production', { ...current, rolloutPercentage: -5 });
     expect(invalidPreview).toMatchObject({ valid: false, issues: [{ path: 'rolloutPercentage' }] });
     expect(invalidPreview.results.every((r) => r.proposed === null)).toBe(true);
   });
 
-  it('reports which config fields differ between environments', () => {
-    const rows = compareEnvironments(ctx);
+  it('reports which config fields differ between environments', async () => {
+    const rows = await compareEnvironments(ctx);
     expect(rows.find((r) => r.flag.key === 'ai_recommendations')!.differences).toEqual(['rollout', 'rules']);
     expect(rows.find((r) => r.flag.key === 'loyalty_rewards')!.differences).toEqual(['enabled', 'default', 'rules']);
   });
 });
 
 describe('atomicity', () => {
-  it('rolls back every write in a failed transaction', async () => {
-    const { transaction } = await import('../src/database/db.js');
-    const before = config('loyalty_program', 'development');
-    const auditCount = listAudit(ctx, {}).length;
-    expect(() => transaction(ctx.db, () => {
-      ctx.db.prepare("UPDATE flag_environments SET config = '{}'").run();
-      ctx.db.prepare("INSERT INTO audit_log (timestamp) VALUES ('x')").run(); // violates NOT NULL
-    })).toThrow();
-    expect(config('loyalty_program', 'development')).toEqual(before);
-    expect(listAudit(ctx, {}).length).toBe(auditCount);
+  it('rolls back every write in a failed commit', async () => {
+    const flag = (await ctx.store.getFlag('loyalty_program'))!;
+    const before = await config('loyalty_program', 'development');
+    const auditCount = (await listAudit(ctx, {})).length;
+    await expect(ctx.store.commit(
+      [
+        { type: 'putConfig', flag, environment: 'development', config: { ...before, enabled: false }, timestamp: '2026-10-31T12:00:00Z' },
+        { type: 'putSegment', segment: { id: 'broken' } as Segment }, // violates NOT NULL
+      ],
+      { timestamp: '2026-10-31T12:00:00Z', actor: admin, operation: 'config.updated', previous: null, next: null },
+    )).rejects.toThrow();
+    expect(await config('loyalty_program', 'development')).toEqual(before);
+    expect((await listAudit(ctx, {})).length).toBe(auditCount);
   });
 
-  it('publishes change events only after a successful save', () => {
+  it('publishes change events only after a successful save', async () => {
     const events: ChangeEvent[] = [];
     ctx.notifier.subscribe((e) => events.push(e));
-    const current = config('ai_recommendations', 'development');
-    expect(() => applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 500 }, false)).toThrow();
-    expect(() => applyConfig(ctx, developer, 'ai_recommendations', 'production', current, true)).toThrow();
+    const current = await config('ai_recommendations', 'development');
+    await expect(applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 500 }, false)).rejects.toThrow();
+    await expect(applyConfig(ctx, developer, 'ai_recommendations', 'production', current, true)).rejects.toThrow();
     expect(events).toEqual([]);
   });
 
-  it('keeps a committed change successful even if a listener throws', () => {
+  it('keeps a committed change successful even if a listener throws', async () => {
     ctx.notifier.subscribe(() => {
       throw new Error('broken SSE client');
     });
-    const current = config('ai_recommendations', 'development');
-    expect(applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 40 }, false).config.rolloutPercentage).toBe(40);
+    const current = await config('ai_recommendations', 'development');
+    expect((await applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 40 }, false)).config.rolloutPercentage).toBe(40);
   });
 });

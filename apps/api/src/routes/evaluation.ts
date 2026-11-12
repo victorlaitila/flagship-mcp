@@ -9,13 +9,13 @@ import { evaluateAll, evaluateOne, parseEnvironment, resolveUser } from '../serv
  */
 export function evaluationRoutes(ctx: ServiceContext): Router {
   const router = Router();
-  router.get('/', (req, res) =>
-    void res.json(evaluateAll(ctx.db, parseEnvironment(req.query.environment), resolveUser(req.query.userId))));
-  router.post('/', (req, res) =>
-    void res.json(evaluateAll(ctx.db, parseEnvironment(req.body?.environment), resolveUser(req.body?.user))));
-  router.get('/:flagKey', (req, res) =>
-    void res.json(evaluateOne(ctx.db, req.params.flagKey, parseEnvironment(req.query.environment), resolveUser(req.query.userId))));
-  router.post('/:flagKey', (req, res) =>
-    void res.json(evaluateOne(ctx.db, req.params.flagKey, parseEnvironment(req.body?.environment), resolveUser(req.body?.user))));
+  router.get('/', async (req, res) =>
+    void res.json(await evaluateAll(ctx.store, parseEnvironment(req.query.environment), resolveUser(req.query.userId))));
+  router.post('/', async (req, res) =>
+    void res.json(await evaluateAll(ctx.store, parseEnvironment(req.body?.environment), resolveUser(req.body?.user))));
+  router.get('/:flagKey', async (req, res) =>
+    void res.json(await evaluateOne(ctx.store, req.params.flagKey, parseEnvironment(req.query.environment), resolveUser(req.query.userId))));
+  router.post('/:flagKey', async (req, res) =>
+    void res.json(await evaluateOne(ctx.store, req.params.flagKey, parseEnvironment(req.body?.environment), resolveUser(req.body?.user))));
   return router;
 }

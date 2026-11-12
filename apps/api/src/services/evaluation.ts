@@ -1,16 +1,15 @@
 import { ENVIRONMENTS, type Environment, type EvaluationResult, type UserContext } from '@flagship/shared';
-import type { Db } from '../database/db.js';
+import type { Store } from '../database/store.js';
 import { DEMO_USERS } from '../demo.js';
 import { AppError, notFound } from '../errors.js';
 import { evaluateFlag, type EvaluationSnapshot } from '../evaluation/engine.js';
-import { listConfigs, listFlags } from '../repositories/flags.js';
-import { listSegments } from '../repositories/segments.js';
 
-export function loadSnapshot(db: Db): EvaluationSnapshot {
+export async function loadSnapshot(store: Store): Promise<EvaluationSnapshot> {
+  const [flags, segments] = await Promise.all([store.listFlagsWithConfigs(), store.listSegments()]);
   return {
-    flags: new Map(listFlags(db).map((f) => [f.key, f])),
-    configs: listConfigs(db),
-    segments: new Map(listSegments(db).map((s) => [s.key, s])),
+    flags: new Map(flags.map((f) => [f.key, f])),
+    configs: new Map(flags.map((f) => [f.key, f.environments])),
+    segments: new Map(segments.map((s) => [s.key, s])),
   };
 }
 
@@ -38,13 +37,13 @@ export function resolveUser(input: unknown): UserContext {
   return { userId: raw.userId, country: raw.country, accountType: raw.accountType };
 }
 
-export function evaluateOne(db: Db, flagKey: string, environment: Environment, user: UserContext): EvaluationResult {
-  const result = evaluateFlag(loadSnapshot(db), flagKey, environment, user);
+export async function evaluateOne(store: Store, flagKey: string, environment: Environment, user: UserContext): Promise<EvaluationResult> {
+  const result = evaluateFlag(await loadSnapshot(store), flagKey, environment, user);
   if (!result) throw notFound(`Flag "${flagKey}"`);
   return result;
 }
 
-export function evaluateAll(db: Db, environment: Environment, user: UserContext): EvaluationResult[] {
-  const snapshot = loadSnapshot(db);
+export async function evaluateAll(store: Store, environment: Environment, user: UserContext): Promise<EvaluationResult[]> {
+  const snapshot = await loadSnapshot(store);
   return [...snapshot.flags.keys()].map((key) => evaluateFlag(snapshot, key, environment, user)!);
 }

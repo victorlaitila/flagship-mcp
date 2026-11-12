@@ -1,10 +1,10 @@
 import { canManageEnvironment, canManageGlobalConfig, ENVIRONMENT_LABELS, ROLE_LABELS, type Actor, type Environment } from '@flagship/shared';
-import type { Db } from '../database/db.js';
+import type { Store } from '../database/store.js';
 import { AppError } from '../errors.js';
 import type { ChangeNotifier } from '../events.js';
 
 export interface ServiceContext {
-  db: Db;
+  store: Store;
   notifier: ChangeNotifier;
   now: () => Date;
 }

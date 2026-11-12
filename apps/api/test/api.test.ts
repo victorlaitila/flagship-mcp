@@ -8,7 +8,7 @@ let server: Server;
 let base: string;
 
 beforeAll(async () => {
-  server = createApp(seededContext()).listen(0);
+  server = createApp(await seededContext()).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://localhost:${(server.address() as AddressInfo).port}/api`;
 });

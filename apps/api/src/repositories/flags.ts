@@ -38,22 +38,15 @@ export function getFlag(db: Db, key: string): Flag | null {
   return row ? toFlag(row) : null;
 }
 
-export function insertFlag(db: Db, flag: Flag): void {
+/** Inserts a flag, or updates its mutable fields (key, type and variants never change). */
+export function upsertFlag(db: Db, flag: Flag): void {
   db.prepare(
     `INSERT INTO flags (id, key, name, description, type, owner, tags, status, variants, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET name = excluded.name, description = excluded.description, owner = excluded.owner,
+       tags = excluded.tags, status = excluded.status, updated_at = excluded.updated_at`,
   ).run(flag.id, flag.key, flag.name, flag.description, flag.type, flag.owner, JSON.stringify(flag.tags),
     flag.status, JSON.stringify(flag.variants), flag.createdAt, flag.updatedAt);
-}
-
-export function updateFlag(db: Db, flag: Flag): void {
-  db.prepare(
-    `UPDATE flags SET name = ?, description = ?, owner = ?, tags = ?, status = ?, updated_at = ? WHERE id = ?`,
-  ).run(flag.name, flag.description, flag.owner, JSON.stringify(flag.tags), flag.status, flag.updatedAt, flag.id);
-}
-
-export function touchFlag(db: Db, flagId: string, timestamp: string): void {
-  db.prepare('UPDATE flags SET updated_at = ? WHERE id = ?').run(timestamp, flagId);
 }
 
 /** Configs for all flags, keyed by flag key. */

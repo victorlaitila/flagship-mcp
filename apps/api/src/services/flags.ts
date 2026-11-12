@@ -13,29 +13,25 @@ import {
   type FlagWithConfigs,
   type PreviewResult,
 } from '@flagship/shared';
-import { transaction } from '../database/db.js';
 import { DEMO_USERS } from '../demo.js';
 import { AppError, invalid, notFound } from '../errors.js';
 import { evaluateFlag } from '../evaluation/engine.js';
-import { insertAuditEntry } from '../repositories/audit.js';
-import * as repo from '../repositories/flags.js';
-import { listSegments } from '../repositories/segments.js';
 import { validateCreateFlag, validateEnvironmentConfig, validateUpdateFlag } from '../validation/validators.js';
 import { assertCanManageEnvironment, assertCanManageGlobal, assertProductionConfirmed, type ServiceContext } from './context.js';
 import { loadSnapshot } from './evaluation.js';
 
-export function listFlags(ctx: ServiceContext): FlagWithConfigs[] {
-  return repo.listFlagsWithConfigs(ctx.db);
+export function listFlags(ctx: ServiceContext): Promise<FlagWithConfigs[]> {
+  return ctx.store.listFlagsWithConfigs();
 }
 
-export function getFlag(ctx: ServiceContext, key: string): FlagWithConfigs {
-  const flag = repo.getFlagWithConfigs(ctx.db, key);
+export async function getFlag(ctx: ServiceContext, key: string): Promise<FlagWithConfigs> {
+  const flag = await ctx.store.getFlagWithConfigs(key);
   if (!flag) throw notFound(`Flag "${key}"`);
   return flag;
 }
 
-function requireFlag(ctx: ServiceContext, key: string): Flag {
-  const flag = repo.getFlag(ctx.db, key);
+async function requireFlag(ctx: ServiceContext, key: string): Promise<Flag> {
+  const flag = await ctx.store.getFlag(key);
   if (!flag) throw notFound(`Flag "${key}"`);
   return flag;
 }
@@ -54,58 +50,59 @@ function initialConfig(flag: Flag): EnvironmentConfig {
   };
 }
 
-export function createFlag(ctx: ServiceContext, actor: Actor, input: unknown): FlagWithConfigs {
-  const existing = new Set(repo.listFlags(ctx.db).map((f) => f.key));
+export async function createFlag(ctx: ServiceContext, actor: Actor, input: unknown): Promise<FlagWithConfigs> {
+  const existing = new Set((await listFlags(ctx)).map((f) => f.key));
   const { value, issues } = validateCreateFlag(input, existing);
   if (!value) throw invalid(issues);
   const timestamp = ctx.now().toISOString();
   const flag: Flag = {
     id: randomUUID(), ...value, variants: value.variants ?? [], status: 'active', createdAt: timestamp, updatedAt: timestamp,
   };
-  const auditId = transaction(ctx.db, () => {
-    repo.insertFlag(ctx.db, flag);
-    for (const env of ENVIRONMENTS) repo.setConfig(ctx.db, flag.id, env, initialConfig(flag), timestamp);
-    return insertAuditEntry(ctx.db, { timestamp, actor, operation: 'flag.created', flagKey: flag.key, previous: null, next: flag });
-  });
+  const auditId = await ctx.store.commit(
+    [
+      { type: 'putFlag', flag },
+      ...ENVIRONMENTS.map((environment) => ({ type: 'putConfig' as const, flag, environment, config: initialConfig(flag), timestamp })),
+    ],
+    { timestamp, actor, operation: 'flag.created', flagKey: flag.key, previous: null, next: flag },
+  );
   ctx.notifier.publish({ entity: 'flag', flagKey: flag.key, auditId });
   return getFlag(ctx, flag.key);
 }
 
-export function updateFlag(ctx: ServiceContext, actor: Actor, key: string, input: unknown): FlagWithConfigs {
-  const flag = requireFlag(ctx, key);
+export async function updateFlag(ctx: ServiceContext, actor: Actor, key: string, input: unknown): Promise<FlagWithConfigs> {
+  const flag = await requireFlag(ctx, key);
   const { value, issues } = validateUpdateFlag(input);
   if (!value) throw invalid(issues);
   // An unchanged save writes nothing, as for configs.
   if (Object.entries(value).every(([field, v]) => isDeepStrictEqual(flag[field as keyof Flag], v))) return getFlag(ctx, key);
   const next: Flag = { ...flag, ...value, updatedAt: ctx.now().toISOString() };
-  const auditId = transaction(ctx.db, () => {
-    repo.updateFlag(ctx.db, next);
-    return insertAuditEntry(ctx.db, { timestamp: next.updatedAt, actor, operation: 'flag.updated', flagKey: key, previous: flag, next });
-  });
+  const auditId = await ctx.store.commit([{ type: 'putFlag', flag: next }],
+    { timestamp: next.updatedAt, actor, operation: 'flag.updated', flagKey: key, previous: flag, next });
   ctx.notifier.publish({ entity: 'flag', flagKey: key, auditId });
   return getFlag(ctx, key);
 }
 
-export function setFlagStatus(
+export async function setFlagStatus(
   ctx: ServiceContext,
   actor: Actor,
   key: string,
   status: Flag['status'],
   confirmProduction?: unknown,
-): FlagWithConfigs {
+): Promise<FlagWithConfigs> {
   assertCanManageGlobal(actor, status === 'archived' ? 'archive flags' : 'restore flags');
-  const flag = requireFlag(ctx, key);
+  const flag = await requireFlag(ctx, key);
   if (flag.status === status) return getFlag(ctx, key);
+  const flags = await listFlags(ctx);
+  const configs = flags.find((f) => f.key === key)!.environments;
   if (status === 'active') {
-    const configs = getFlag(ctx, key).environments;
     const archived = [...new Set(ENVIRONMENTS.flatMap((env) => configs[env].prerequisites))]
-      .filter((prerequisite) => repo.getFlag(ctx.db, prerequisite)?.status === 'archived');
+      .filter((prerequisite) => flags.find((f) => f.key === prerequisite)?.status === 'archived');
     if (archived.length > 0) {
       throw new AppError('CONFLICT', `Cannot restore "${key}": it requires ${archived.join(', ')}, which ${archived.length > 1 ? 'are' : 'is'} archived.`, undefined, { archived });
     }
   }
   if (status === 'archived') {
-    const dependents = repo.listFlagsWithConfigs(ctx.db).flatMap((f) =>
+    const dependents = flags.flatMap((f) =>
       f.status === 'active'
         ? ENVIRONMENTS.filter((env) => f.environments[env].prerequisites.includes(key)).map((env) => `${f.key} (${env})`)
         : [],
@@ -115,30 +112,27 @@ export function setFlagStatus(
     }
   }
   // Archiving or restoring a flag that is enabled in Production changes Production evaluation.
-  if (repo.getConfig(ctx.db, flag.id, 'production').enabled) assertProductionConfirmed('production', confirmProduction);
+  if (configs.production.enabled) assertProductionConfirmed('production', confirmProduction);
   const next: Flag = { ...flag, status, updatedAt: ctx.now().toISOString() };
-  const auditId = transaction(ctx.db, () => {
-    repo.updateFlag(ctx.db, next);
-    return insertAuditEntry(ctx.db, {
-      timestamp: next.updatedAt, actor, operation: status === 'archived' ? 'flag.archived' : 'flag.restored',
-      flagKey: key, previous: flag, next,
-    });
+  const auditId = await ctx.store.commit([{ type: 'putFlag', flag: next }], {
+    timestamp: next.updatedAt, actor, operation: status === 'archived' ? 'flag.archived' : 'flag.restored',
+    flagKey: key, previous: flag, next,
   });
   ctx.notifier.publish({ entity: 'flag', flagKey: key, auditId });
   return getFlag(ctx, key);
 }
 
-export function getConfig(ctx: ServiceContext, key: string, environment: Environment): EnvironmentConfig {
-  return repo.getConfig(ctx.db, requireFlag(ctx, key).id, environment);
+export async function getConfig(ctx: ServiceContext, key: string, environment: Environment): Promise<EnvironmentConfig> {
+  return (await getFlag(ctx, key)).environments[environment];
 }
 
-function validateAgainstCurrentState(ctx: ServiceContext, flag: Flag, environment: Environment, input: unknown) {
-  const flags = repo.listFlagsWithConfigs(ctx.db);
+async function validateAgainstCurrentState(ctx: ServiceContext, flag: Flag, environment: Environment, input: unknown) {
+  const [flags, segments] = await Promise.all([listFlags(ctx), ctx.store.listSegments()]);
   return validateEnvironmentConfig(input, {
     flag,
     flags: new Map(flags.map((f) => [f.key, f])),
     prerequisitesByFlag: new Map(flags.map((f) => [f.key, f.environments[environment].prerequisites])),
-    segmentKeys: new Set(listSegments(ctx.db).map((s) => s.key)),
+    segmentKeys: new Set(segments.map((s) => s.key)),
   });
 }
 
@@ -156,7 +150,7 @@ export interface ApplyOptions {
 }
 
 /** Validates and persists a config, writing an audit entry. Shared by updates and rollbacks. */
-export function applyConfig(
+export async function applyConfig(
   ctx: ServiceContext,
   actor: Actor,
   flagKey: string,
@@ -164,36 +158,35 @@ export function applyConfig(
   input: unknown,
   confirmProduction: unknown,
   { operation = 'config.updated', rollbackOf = null, expectedConfig }: ApplyOptions = {},
-): AppliedConfig {
-  const flag = requireFlag(ctx, flagKey);
+): Promise<AppliedConfig> {
+  const flag = await requireFlag(ctx, flagKey);
   assertCanManageEnvironment(actor, environment);
   assertProductionConfirmed(environment, confirmProduction);
-  const { value, issues } = validateAgainstCurrentState(ctx, flag, environment, input);
+  const { value, issues } = await validateAgainstCurrentState(ctx, flag, environment, input);
   if (!value) throw invalid(issues, 'Configuration is invalid.');
-  const previous = repo.getConfig(ctx.db, flag.id, environment);
+  const previous = await getConfig(ctx, flagKey, environment);
   if (expectedConfig !== undefined && !isDeepStrictEqual(previous, expectedConfig)) {
     throw new AppError('CONFLICT', 'The configuration has changed since this proposal was made. Review the current configuration and try again.', undefined, { current: previous });
   }
   if (JSON.stringify(previous) === JSON.stringify(value)) return { config: previous, auditId: null };
 
   const timestamp = ctx.now().toISOString();
-  const auditId = transaction(ctx.db, () => {
-    repo.setConfig(ctx.db, flag.id, environment, value, timestamp);
-    repo.touchFlag(ctx.db, flag.id, timestamp);
-    return insertAuditEntry(ctx.db, { timestamp, actor, operation, flagKey, environment, previous, next: value, rollbackOf });
-  });
+  const auditId = await ctx.store.commit(
+    [{ type: 'putConfig', flag, environment, config: value, timestamp }, { type: 'putFlag', flag: { ...flag, updatedAt: timestamp } }],
+    { timestamp, actor, operation, flagKey, environment, previous, next: value, rollbackOf },
+  );
   ctx.notifier.publish({ entity: 'config', flagKey, environment, auditId });
   return { config: value, auditId };
 }
 
 /** Validates a proposed config and evaluates it for demo users without persisting anything. */
-export function previewConfig(ctx: ServiceContext, flagKey: string, environment: Environment, input: unknown, userIds?: unknown): PreviewResult {
-  const flag = requireFlag(ctx, flagKey);
+export async function previewConfig(ctx: ServiceContext, flagKey: string, environment: Environment, input: unknown, userIds?: unknown): Promise<PreviewResult> {
+  const flag = await requireFlag(ctx, flagKey);
   const users = Array.isArray(userIds) && userIds.length > 0
     ? DEMO_USERS.filter((u) => userIds.includes(u.userId))
     : DEMO_USERS;
-  const { value, issues } = validateAgainstCurrentState(ctx, flag, environment, input);
-  const current = loadSnapshot(ctx.db);
+  const { value, issues } = await validateAgainstCurrentState(ctx, flag, environment, input);
+  const current = await loadSnapshot(ctx.store);
   const proposed = value
     ? { ...current, configs: new Map(current.configs).set(flagKey, { ...current.configs.get(flagKey)!, [environment]: value }) }
     : null;
@@ -215,8 +208,8 @@ const FIELD_SELECTORS: Record<ConfigField, (c: EnvironmentConfig) => unknown> = 
   prerequisites: (c) => [...c.prerequisites].sort(),
 };
 
-export function compareEnvironments(ctx: ServiceContext, environments: readonly Environment[] = ENVIRONMENTS): EnvironmentComparisonRow[] {
-  return listFlags(ctx).map((flag) => ({
+export async function compareEnvironments(ctx: ServiceContext, environments: readonly Environment[] = ENVIRONMENTS): Promise<EnvironmentComparisonRow[]> {
+  return (await listFlags(ctx)).map((flag) => ({
     flag,
     differences: (Object.keys(FIELD_SELECTORS) as ConfigField[]).filter((field) => {
       const values = environments.map((env) => JSON.stringify(FIELD_SELECTORS[field](flag.environments[env])));

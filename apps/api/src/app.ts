@@ -24,12 +24,12 @@ export function createApp(ctx: ServiceContext): express.Express {
   app.get('/api/demo-users', (_req, res) => void res.json(DEMO_USERS));
   app.get('/api/whoami', (req, res) => void res.json(requireActor(req)));
   // ?environments=staging,production compares just those; default compares all three.
-  app.get('/api/environments/compare', (req, res) => {
+  app.get('/api/environments/compare', async (req, res) => {
     const environments = typeof req.query.environments === 'string'
       ? [...new Set(req.query.environments.split(',').map(parseEnvironment))]
       : undefined;
     if (environments && environments.length < 2) throw new AppError('BAD_REQUEST', 'Compare at least two different environments.');
-    res.json(compareEnvironments(ctx, environments));
+    res.json(await compareEnvironments(ctx, environments));
   });
   app.use('/api/flags', flagRoutes(ctx));
   app.use('/api/segments', segmentRoutes(ctx));

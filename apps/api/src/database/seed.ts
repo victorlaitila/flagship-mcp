@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Condition, Environment, EnvironmentConfig, Flag, Segment, TargetingRule } from '@flagship/shared';
 import { ACTORS, SYSTEM_ACTOR } from '../demo.js';
-import { insertAuditEntry } from '../repositories/audit.js';
-import { insertFlag, setConfig } from '../repositories/flags.js';
-import { upsertSegment } from '../repositories/segments.js';
-import { transaction, type Db } from './db.js';
+import type { Db } from './db.js';
+import type { Store } from './store.js';
 
 const [leo, ida, sara] = ACTORS;
 const DAY = 24 * 60 * 60 * 1000;
@@ -178,35 +176,34 @@ export function isSeeded(db: Db): boolean {
   return (db.prepare('SELECT COUNT(*) AS n FROM flags').get() as { n: number }).n > 0;
 }
 
-export function seed(db: Db, now = Date.now()): void {
-  transaction(db, () => {
-    const at = (daysAgo: number, offsetMinutes = 0) => new Date(now - daysAgo * DAY + offsetMinutes * 60_000).toISOString();
+/** Seeds an empty store, one commit per seeded change so the audit log reads like real history. */
+export async function seed(store: Store, now = Date.now()): Promise<void> {
+  const at = (daysAgo: number, offsetMinutes = 0) => new Date(now - daysAgo * DAY + offsetMinutes * 60_000).toISOString();
 
-    SEGMENTS.forEach((s) => {
-      const timestamp = at(60);
-      upsertSegment(db, { ...s, id: randomUUID(), createdAt: timestamp, updatedAt: timestamp });
-      insertAuditEntry(db, { timestamp, actor: SYSTEM_ACTOR, operation: 'segment.created', segmentKey: s.key, previous: null, next: s });
-    });
+  for (const s of SEGMENTS) {
+    const timestamp = at(60);
+    await store.commit([{ type: 'putSegment', segment: { ...s, id: randomUUID(), createdAt: timestamp, updatedAt: timestamp } }],
+      { timestamp, actor: SYSTEM_ACTOR, operation: 'segment.created', segmentKey: s.key, previous: null, next: s });
+  }
 
-    const flagIds = new Map<string, string>();
-    FLAGS.forEach(({ flag, configs }, i) => {
-      const created = at(50 - i * 3);
-      const id = randomUUID();
-      flagIds.set(flag.key, id);
-      const lastChange = HISTORY.filter((h) => h.flagKey === flag.key).at(-1);
-      const updatedAt = lastChange ? at(lastChange.daysAgo) : created;
-      insertFlag(db, { ...flag, id, status: 'active', createdAt: created, updatedAt });
-      for (const [environment, c] of Object.entries(configs) as [Environment, EnvironmentConfig][]) {
-        setConfig(db, id, environment, c, updatedAt);
-      }
-      insertAuditEntry(db, { timestamp: created, actor: i % 2 ? leo : sara, operation: 'flag.created', flagKey: flag.key,
-        previous: null, next: flag });
-    });
+  for (const [i, { flag, configs }] of FLAGS.entries()) {
+    const created = at(50 - i * 3);
+    const lastChange = HISTORY.filter((h) => h.flagKey === flag.key).at(-1);
+    const updatedAt = lastChange ? at(lastChange.daysAgo) : created;
+    const stored: Flag = { ...flag, id: randomUUID(), status: 'active', createdAt: created, updatedAt };
+    await store.commit(
+      [
+        { type: 'putFlag', flag: stored },
+        ...(Object.entries(configs) as [Environment, EnvironmentConfig][]).map(([environment, config]) =>
+          ({ type: 'putConfig' as const, flag: stored, environment, config, timestamp: updatedAt })),
+      ],
+      { timestamp: created, actor: i % 2 ? leo : sara, operation: 'flag.created', flagKey: flag.key, previous: null, next: flag },
+    );
+  }
 
-    for (const h of HISTORY) {
-      const current = FLAGS.find((f) => f.flag.key === h.flagKey)!.configs[h.environment];
-      insertAuditEntry(db, { timestamp: at(h.daysAgo), actor: h.actor, operation: 'config.updated', flagKey: h.flagKey,
-        environment: h.environment, previous: h.previous(current), next: current });
-    }
-  });
+  for (const h of HISTORY) {
+    const current = FLAGS.find((f) => f.flag.key === h.flagKey)!.configs[h.environment];
+    await store.commit([], { timestamp: at(h.daysAgo), actor: h.actor, operation: 'config.updated', flagKey: h.flagKey,
+      environment: h.environment, previous: h.previous(current), next: current });
+  }
 }

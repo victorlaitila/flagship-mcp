@@ -12,11 +12,11 @@ function parseId(raw: string): number {
 
 export function auditRoutes(ctx: ServiceContext): Router {
   const router = Router();
-  router.get('/', (req, res) => void res.json(audit.listAudit(ctx, req.query)));
-  router.get('/:id', (req, res) => void res.json(audit.getAudit(ctx, parseId(req.params.id))));
-  router.post('/:id/rollback', (req, res) => {
+  router.get('/', async (req, res) => void res.json(await audit.listAudit(ctx, req.query)));
+  router.get('/:id', async (req, res) => void res.json(await audit.getAudit(ctx, parseId(req.params.id))));
+  router.post('/:id/rollback', async (req, res) => {
     const actor = requireActor(req);
-    const { config, auditId } = audit.rollback(ctx, actor, parseId(req.params.id), req.body?.confirmProduction, req.body?.expectedConfig);
+    const { config, auditId } = await audit.rollback(ctx, actor, parseId(req.params.id), req.body?.confirmProduction, req.body?.expectedConfig);
     if (auditId !== null) res.set('X-Audit-Id', String(auditId));
     res.json(config);
   });
