@@ -6,6 +6,7 @@ import type { ServiceContext } from '../src/services/context.js';
 import { evaluateOne } from '../src/services/evaluation.js';
 import { applyConfig, compareEnvironments, createFlag, getFlag, previewConfig, setFlagStatus } from '../src/services/flags.js';
 import { createSegment, deleteSegment, listSegments, updateSegment } from '../src/services/segments.js';
+import { LIMITS } from '../src/validation/validators.js';
 import { admin, developer, releaseManager, seededContext } from './helpers.js';
 
 let ctx: ServiceContext;
@@ -249,5 +250,23 @@ describe('production read-only', () => {
     expect((await listSegments(ctx)).find((s) => s.key === 'finnish_customers')!.name).not.toBe('Changed');
     await createSegment(ctx, admin, { key: 'swedish_customers', name: 'Swedish customers', conditions: segment.conditions });
     expect((await updateSegment(ctx, admin, 'swedish_customers', segment)).name).toBe('Changed');
+  });
+});
+
+describe('count limits', () => {
+  it(`stops creating flags at ${LIMITS.flags}, archived ones included`, async () => {
+    const existing = (await ctx.store.listFlagsWithConfigs()).length;
+    for (let i = existing; i < LIMITS.flags; i++) await createFlag(ctx, developer, { key: `extra_${i}`, name: 'x', type: 'boolean', owner: 'x' });
+    await setFlagStatus(ctx, admin, 'extra_10', 'archived');
+    expect(await errorCode(createFlag(ctx, developer, { key: 'one_too_many', name: 'x', type: 'boolean', owner: 'x' }))).toBe('CONFLICT');
+  });
+
+  it(`stops creating segments at ${LIMITS.segments}, and frees a slot on delete`, async () => {
+    const existing = (await ctx.store.listSegments()).length;
+    const segment = (key: string) => ({ key, name: key, conditions: [{ attribute: 'country', operator: 'in', values: ['FI'] }] });
+    for (let i = existing; i < LIMITS.segments; i++) await createSegment(ctx, admin, segment(`extra_${i}`));
+    expect(await errorCode(createSegment(ctx, admin, segment('one_too_many')))).toBe('CONFLICT');
+    await deleteSegment(ctx, admin, 'extra_10');
+    expect((await createSegment(ctx, admin, segment('one_too_many'))).key).toBe('one_too_many');
   });
 });

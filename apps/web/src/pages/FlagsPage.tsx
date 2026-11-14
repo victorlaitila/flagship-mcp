@@ -92,7 +92,7 @@ function CreateFlagModal({ open, onClose }: { open: boolean; onClose: () => void
             <Input value={form.key} className="font-mono" onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="gift_wrapping" />
           </Field>
         </div>
-        <Field label="Description"><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+        <Field label="Description" error={issue('description')}><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Type" error={issue('type')}>
             <Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as FlagType })}>
@@ -106,7 +106,7 @@ function CreateFlagModal({ open, onClose }: { open: boolean; onClose: () => void
             <Input value={form.variants} onChange={(e) => setForm({ ...form, variants: e.target.value })} />
           </Field>
         )}
-        <Field label="Tags" hint="Comma separated"><Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></Field>
+        <Field label="Tags" hint="Comma separated" error={issue('tags')}><Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></Field>
         <p className="text-xs text-faint">New flags start disabled in every environment.</p>
         {error && <p className="text-sm text-danger">{error}</p>}
       </div>

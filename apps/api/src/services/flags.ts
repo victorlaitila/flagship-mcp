@@ -16,7 +16,7 @@ import {
 import { DEMO_USERS } from '../demo.js';
 import { AppError, invalid, notFound } from '../errors.js';
 import { evaluateFlag } from '../evaluation/engine.js';
-import { validateCreateFlag, validateEnvironmentConfig, validateUpdateFlag } from '../validation/validators.js';
+import { LIMITS, validateCreateFlag, validateEnvironmentConfig, validateUpdateFlag } from '../validation/validators.js';
 import { assertCanManageEnvironment, assertCanManageGlobal, assertProductionConfirmed, assertProductionWritable, type ServiceContext } from './context.js';
 import { loadSnapshot } from './evaluation.js';
 
@@ -51,7 +51,11 @@ function initialConfig(flag: Flag): EnvironmentConfig {
 }
 
 export async function createFlag(ctx: ServiceContext, actor: Actor, input: unknown): Promise<FlagWithConfigs> {
-  const existing = new Set((await listFlags(ctx)).map((f) => f.key));
+  const flags = await listFlags(ctx);
+  if (flags.length >= LIMITS.flags) {
+    throw new AppError('CONFLICT', `Flagship allows at most ${LIMITS.flags} flags, archived ones included.`);
+  }
+  const existing = new Set(flags.map((f) => f.key));
   const { value, issues } = validateCreateFlag(input, existing);
   if (!value) throw invalid(issues);
   const timestamp = ctx.now().toISOString();

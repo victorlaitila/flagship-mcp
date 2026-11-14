@@ -16,7 +16,32 @@ import {
 
 const KEY_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
 
+/** Size limits for a public deployment: no single write may bloat what every visitor downloads. */
+export const LIMITS = {
+  flags: 50, // archived flags included: flags can't be deleted
+  segments: 30,
+  name: 80,
+  owner: 80,
+  description: 500,
+  tags: 10,
+  tag: 30,
+  variants: 10,
+  rules: 20,
+  ruleId: 64,
+  conditions: 10,
+  values: 50,
+  value: 100,
+} as const;
+
 type Issues = ValidationIssue[];
+
+function checkLength(value: string, max: number, path: string, issues: Issues): void {
+  if (value.length > max) issues.push({ path, message: `At most ${max} characters (currently ${value.length}).` });
+}
+
+function checkCount(list: readonly unknown[], max: number, path: string, what: string, issues: Issues): void {
+  if (list.length > max) issues.push({ path, message: `At most ${max} ${what} (currently ${list.length}).` });
+}
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -39,6 +64,7 @@ function validateConditions(
     issues.push({ path, message: 'At least one condition is required.' });
     return [];
   }
+  checkCount(input, LIMITS.conditions, path, 'conditions', issues);
   return input.map((raw, i) => {
     const p = `${path}[${i}]`;
     if (!isRecord(raw)) {
@@ -60,6 +86,8 @@ function validateConditions(
     } else if ((operator === 'equals' || operator === 'not_equals') && values.length !== 1) {
       issues.push({ path: `${p}.values`, message: `Operator "${operator}" takes exactly one value.` });
     }
+    checkCount(values, LIMITS.values, `${p}.values`, 'values', issues);
+    values.forEach((v, j) => checkLength(v, LIMITS.value, `${p}.values[${j}]`, issues));
     if (attribute === 'segment') {
       for (const key of values) {
         if (!segmentKeys.has(key)) issues.push({ path: `${p}.values`, message: `Unknown segment "${key}".` });
@@ -136,6 +164,7 @@ export function validateEnvironmentConfig(input: unknown, ctx: ConfigContext): V
   if (!Array.isArray(input.rules)) {
     issues.push({ path: 'rules', message: 'Rules must be a list.' });
   } else {
+    checkCount(input.rules, LIMITS.rules, 'rules', 'targeting rules', issues);
     const ids = new Set<string>();
     input.rules.forEach((raw, i) => {
       const p = `rules[${i}]`;
@@ -143,6 +172,7 @@ export function validateEnvironmentConfig(input: unknown, ctx: ConfigContext): V
       const id = nonEmpty(raw.id) ? raw.id : '';
       if (!id) issues.push({ path: `${p}.id`, message: 'Rule id is required.' });
       else if (ids.has(id)) issues.push({ path: `${p}.id`, message: `Duplicate rule id "${id}".` });
+      checkLength(id, LIMITS.ruleId, `${p}.id`, issues);
       ids.add(id);
       const effect = raw.effect;
       if (effect !== 'include' && effect !== 'exclude') {
@@ -155,9 +185,11 @@ export function validateEnvironmentConfig(input: unknown, ctx: ConfigContext): V
         } else variant = raw.variant;
       }
       const conditions = validateConditions(raw.conditions, `${p}.conditions`, issues, ctx.segmentKeys, true);
+      const description = typeof raw.description === 'string' ? raw.description.trim() : '';
+      checkLength(description, LIMITS.name, `${p}.description`, issues);
       rules.push({
         id,
-        description: typeof raw.description === 'string' ? raw.description.trim() : '',
+        description,
         effect: effect as TargetingRule['effect'],
         conditions,
         variant,
@@ -215,7 +247,17 @@ function validateTags(input: unknown, issues: Issues): string[] {
     issues.push({ path: 'tags', message: 'Tags must be a list of strings.' });
     return [];
   }
-  return [...new Set(input.map((t) => t.trim().toLowerCase()).filter(Boolean))];
+  const tags = [...new Set(input.map((t) => t.trim().toLowerCase()).filter(Boolean))];
+  checkCount(tags, LIMITS.tags, 'tags', 'tags', issues);
+  tags.forEach((t, i) => checkLength(t, LIMITS.tag, `tags[${i}]`, issues));
+  return tags;
+}
+
+/** Name, owner and description checks shared by flag create and update. */
+function checkFlagText(input: Record<string, unknown>, issues: Issues): void {
+  if (typeof input.name === 'string') checkLength(input.name.trim(), LIMITS.name, 'name', issues);
+  if (typeof input.owner === 'string') checkLength(input.owner.trim(), LIMITS.owner, 'owner', issues);
+  if (typeof input.description === 'string') checkLength(input.description.trim(), LIMITS.description, 'description', issues);
 }
 
 export function validateCreateFlag(input: unknown, existingKeys: Set<string>): Validated<CreateFlagInput> {
@@ -227,6 +269,7 @@ export function validateCreateFlag(input: unknown, existingKeys: Set<string>): V
   } else if (existingKeys.has(key)) issues.push({ path: 'key', message: `A flag with key "${key}" already exists.` });
   if (!nonEmpty(input.name)) issues.push({ path: 'name', message: 'Name is required.' });
   if (!nonEmpty(input.owner)) issues.push({ path: 'owner', message: 'Owner is required.' });
+  checkFlagText(input, issues);
   const type = input.type as FlagType;
   if (!FLAG_TYPES.includes(type)) issues.push({ path: 'type', message: `Type must be one of: ${FLAG_TYPES.join(', ')}.` });
   const tags = validateTags(input.tags ?? [], issues);
@@ -236,6 +279,7 @@ export function validateCreateFlag(input: unknown, existingKeys: Set<string>): V
     if (!Array.isArray(input.variants) || input.variants.length < 2) {
       issues.push({ path: 'variants', message: 'Multivariate flags need at least two variants.' });
     } else {
+      checkCount(input.variants, LIMITS.variants, 'variants', 'variants', issues);
       const seen = new Set<string>();
       variants = input.variants.map((raw, i) => {
         const v = isRecord(raw) ? raw : {};
@@ -244,6 +288,7 @@ export function validateCreateFlag(input: unknown, existingKeys: Set<string>): V
         else if (seen.has(vKey)) issues.push({ path: `variants[${i}].key`, message: `Duplicate variant "${vKey}".` });
         seen.add(vKey);
         if (!nonEmpty(v.name)) issues.push({ path: `variants[${i}].name`, message: 'Variant name is required.' });
+        else checkLength(v.name.trim(), LIMITS.name, `variants[${i}].name`, issues);
         return { key: vKey, name: typeof v.name === 'string' ? v.name.trim() : '' };
       });
     }
@@ -285,6 +330,7 @@ export function validateUpdateFlag(input: unknown): Validated<UpdateFlagInput> {
     else value.description = input.description.trim();
   }
   if (input.tags !== undefined) value.tags = validateTags(input.tags, issues);
+  checkFlagText(input, issues);
   return issues.length > 0 ? { value: null, issues } : { value, issues };
 }
 
@@ -301,6 +347,8 @@ export function validateSegment(
     else if (existingKeys.has(key)) issues.push({ path: 'key', message: `A segment with key "${key}" already exists.` });
   }
   if (!nonEmpty(input.name)) issues.push({ path: 'name', message: 'Name is required.' });
+  else checkLength(input.name.trim(), LIMITS.name, 'name', issues);
+  if (typeof input.description === 'string') checkLength(input.description.trim(), LIMITS.description, 'description', issues);
   const conditions = validateConditions(input.conditions, 'conditions', issues, new Set(), false);
   if (issues.length > 0) return { value: null, issues };
   return {

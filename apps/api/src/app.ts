@@ -17,7 +17,8 @@ export const SSE_HEARTBEAT_MS = 5000;
 export function createApp(ctx: ServiceContext): express.Express {
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '1mb' }));
+  // Generous for any real config (a few KB) while keeping abusive payloads out.
+  app.use(express.json({ limit: '64kb' }));
 
   app.get('/api/health', (_req, res) => void res.json({ ok: true }));
   app.get('/api/actors', (_req, res) => void res.json(ACTORS));
@@ -61,7 +62,7 @@ export function createApp(ctx: ServiceContext): express.Express {
       return void res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Malformed JSON body.' } } satisfies ApiErrorBody);
     }
     if (error?.type === 'entity.too.large') {
-      return void res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is larger than 1 MB.' } } satisfies ApiErrorBody);
+      return void res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is larger than 64 KB.' } } satisfies ApiErrorBody);
     }
     console.error(error);
     res.status(500).json({ error: { code: 'INTERNAL', message: 'Unexpected server error.' } } satisfies ApiErrorBody);

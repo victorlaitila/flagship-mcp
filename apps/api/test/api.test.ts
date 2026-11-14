@@ -58,7 +58,7 @@ describe('REST API', () => {
   });
 
   it('answers an oversized body with 413, not an internal error', async () => {
-    const big = await call('/flags/new_search', { method: 'PATCH', actor: 'sara', json: { description: 'x'.repeat(1_100_000) } });
+    const big = await call('/flags/new_search', { method: 'PATCH', actor: 'sara', json: { description: 'x'.repeat(70_000) } });
     expect(big).toMatchObject({ status: 413, body: { error: { code: 'PAYLOAD_TOO_LARGE' } } });
   });
 

@@ -8,6 +8,7 @@ import {
   type Environment,
   type FlagWithConfigs,
   type PreviewResult,
+  type ValidationIssue,
 } from '@flagship/shared';
 import { Archive, ArchiveRestore, ChevronLeft, Pencil, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
@@ -18,19 +19,22 @@ import { ConfigEditor } from '../features/config-editor/ConfigEditor';
 import { CurrentEvaluations, PreviewEvaluations } from '../features/config-editor/EvaluationTable';
 import { useActor } from '../hooks/useActor';
 import { useLiveResource } from '../hooks/useLive';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { relativeTime } from '../lib/format';
 
 function EditDetailsModal({ flag, open, onClose }: { flag: FlagWithConfigs; open: boolean; onClose: () => void }) {
   const [form, setForm] = useState({ name: flag.name, description: flag.description, owner: flag.owner, tags: flag.tags.join(', ') });
   const [error, setError] = useState<string | null>(null);
+  const [issues, setIssues] = useState<ValidationIssue[]>([]);
   const [busy, setBusy] = useState(false);
+  const issue = (path: string) => issues.find((i) => i.path === path || i.path.startsWith(`${path}[`))?.message;
   const submit = async () => {
     setBusy(true);
     try {
       await api.updateFlag(flag.key, { ...form, tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean) });
       onClose();
     } catch (e) {
+      setIssues(e instanceof ApiError ? e.issues : []);
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -39,8 +43,8 @@ function EditDetailsModal({ flag, open, onClose }: { flag: FlagWithConfigs; open
   return (
     <Modal open={open} onClose={onClose} title="Edit flag details" footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" loading={busy} onClick={submit}>Save</Button></>}>
       <div className="space-y-3">
-        <Field label="Name"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-        <Field label="Description">
+        <Field label="Name" error={issue('name')}><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Description" error={issue('description')}>
           <textarea
             value={form.description}
             rows={3}
@@ -48,8 +52,8 @@ function EditDetailsModal({ flag, open, onClose }: { flag: FlagWithConfigs; open
             className="w-full rounded-md border border-line-strong bg-canvas px-2.5 py-2 text-sm focus:border-accent focus:outline-none"
           />
         </Field>
-        <Field label="Owner"><Input value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })} /></Field>
-        <Field label="Tags" hint="Comma separated"><Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></Field>
+        <Field label="Owner" error={issue('owner')}><Input value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })} /></Field>
+        <Field label="Tags" hint="Comma separated" error={issue('tags')}><Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></Field>
         <p className="text-xs text-faint">Key and type are immutable: code and other flags reference them.</p>
         {error && <p className="text-sm text-danger">{error}</p>}
       </div>

@@ -3,7 +3,7 @@ import { ENVIRONMENTS, type Actor, type FlagWithConfigs, type Segment, type Segm
 import { DEMO_USERS } from '../demo.js';
 import { AppError, invalid, notFound } from '../errors.js';
 import { userInSegment } from '../evaluation/engine.js';
-import { validateSegment } from '../validation/validators.js';
+import { LIMITS, validateSegment } from '../validation/validators.js';
 import { assertCanManageGlobal, assertProductionWritable, type ServiceContext } from './context.js';
 
 function findReferences(flags: FlagWithConfigs[], segmentKey: string): SegmentReference[] {
@@ -39,7 +39,11 @@ export async function getSegment(ctx: ServiceContext, key: string): Promise<Segm
 
 export async function createSegment(ctx: ServiceContext, actor: Actor, input: unknown): Promise<SegmentWithUsage> {
   assertCanManageGlobal(actor, 'manage segments (they apply to every environment)');
-  const existing = new Set((await ctx.store.listSegments()).map((s) => s.key));
+  const segments = await ctx.store.listSegments();
+  if (segments.length >= LIMITS.segments) {
+    throw new AppError('CONFLICT', `Flagship allows at most ${LIMITS.segments} segments. Delete an unused one first.`);
+  }
+  const existing = new Set(segments.map((s) => s.key));
   const { value, issues } = validateSegment(input, existing, null);
   if (!value) throw invalid(issues);
   const timestamp = ctx.now().toISOString();

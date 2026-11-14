@@ -16,6 +16,8 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 | [10](#10-the-mcp-server-is-a-plain-api-client-with-plan-then-apply-and-read-only-production) | The MCP server is a plain API client, with plan-then-apply and read-only Production | Accepted |
 | [11](#11-storefront-state-stays-in-the-browser) | Storefront state stays in the browser | Accepted |
 | [12](#12-tests-run-against-the-real-backend) | Tests run against the real backend | Accepted |
+| [13](#13-storage-behind-an-async-store-interface-with-one-commit-per-change) | Storage behind an async `Store` interface, with one commit per change | Accepted |
+| [14](#14-guardrails-for-a-public-deployment-read-only-production-and-size-limits) | Guardrails for a public deployment: read-only Production and size limits | Accepted |
 
 ---
 
@@ -185,3 +187,28 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 - *Component tests in a simulated DOM (jsdom).* Not adopted: the behaviour that matters crosses the network, and Playwright covers it against the real app.
 
 **Consequences.** The tests catch real integration failures and never touch the development database. Browser tests are slower and run serially.
+
+### 13. Storage behind an async `Store` interface, with one commit per change
+
+**Context.** The public demo will run on AWS Lambda with DynamoDB, which is asynchronous and has no interactive transactions, while local development and tests keep SQLite (decision 3).
+
+**Decision.** Services use only `Store` (`apps/api/src/database/store.ts`): async reads plus `commit(writes, audit)`, which applies a list of writes (`putFlag`, `putConfig`, `putSegment`, `deleteSegment`) and appends the audit entry atomically, returning its id. `SqliteStore` (`database/sqlite-store.ts`) implements it with one SQLite transaction. This is how decision 2's "persist and audit in one transaction" is carried out.
+
+**Alternatives considered.**
+- *Make the SQLite repository functions async and keep transactions in the services.* Rejected: DynamoDB can't hold a transaction open across awaits, so every service would have had to change again.
+
+**Consequences.** A backend only needs reads and one atomic write to plug in. `SqliteStore` is race-free only because its methods never wait on real I/O, so no other request runs between a service's checks and its commit. A store that does real I/O must guard `commit` itself (e.g. fail when anything was committed since the service read its state).
+
+### 14. Guardrails for a public deployment: read-only Production and size limits
+
+**Context.** The demo will be public with simulated identities, so anyone can act as Admin. Without limits, a visitor could change what the Production storefront shows, or store data that every other visitor then downloads.
+
+**Decision.**
+- **`PRODUCTION_READ_ONLY=true`** (`apps/api/src/config.ts`) makes `assertProductionWritable` (`services/context.ts`) refuse, with 403 and before Production confirmation, every change that alters Production evaluation: Production config writes and rollbacks, archiving or restoring a flag enabled in Production, and editing a segment used by Production rules. Any value other than `true`/`false` stops startup. The dashboard mirrors it via `GET /api/settings`.
+- **Size limits:** 64 KB request bodies (`app.ts`), and `LIMITS` in `validation/validators.ts` for field lengths and list sizes (returned as validation issues) and for the number of flags (50, archived included) and segments (30) (409).
+
+**Alternatives considered.**
+- *Hide the Admin identity in the deployment.* Rejected: Admin-only features would disappear from the demo, and a direct API call could still pick Admin.
+- *Rely on throttling and nightly resets alone.* Rejected: throttling caps the request rate, not what one request stores, and a reset leaves the damage visible until it runs.
+
+**Consequences.** Visitors can try everything in Development and Staging, while Production stays as seeded. New write paths that can reach Production must call `assertProductionWritable` (recorded in `CLAUDE.md`). The limits also apply locally; the seed stays well inside them (tested).

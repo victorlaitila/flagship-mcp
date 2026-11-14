@@ -1,6 +1,8 @@
 import type { EnvironmentConfig, Flag } from '@flagship/shared';
 import { describe, expect, it } from 'vitest';
-import { findCycle, validateEnvironmentConfig, validateSegment, type ConfigContext } from '../src/validation/validators.js';
+import { ENVIRONMENTS } from '@flagship/shared';
+import { findCycle, LIMITS, validateCreateFlag, validateEnvironmentConfig, validateSegment, validateUpdateFlag, type ConfigContext } from '../src/validation/validators.js';
+import { seededContext } from './helpers.js';
 
 const mv: Flag = {
   id: 'm', key: 'mv', name: 'mv', description: '', type: 'multivariate', owner: 't', tags: [], status: 'active',
@@ -91,5 +93,73 @@ describe('segment validation', () => {
   it('rejects segment conditions that reference segments', () => {
     const r = validateSegment({ key: 'x_y', name: 'X', conditions: [{ attribute: 'segment', operator: 'in', values: ['a'] }] }, new Set(), null);
     expect(paths(r)).toContain('conditions[0].attribute');
+  });
+});
+
+describe('size limits', () => {
+  const long = (n: number) => 'x'.repeat(n);
+  const cond = (values: string[]) => ({ attribute: 'country', operator: 'in', values });
+  const rule = (i: number, extra = {}) => ({ id: `r${i}`, effect: 'include', conditions: [cond(['FI'])], ...extra });
+
+  it('accepts values exactly at each limit', () => {
+    const atLimit = {
+      ...base,
+      rules: Array.from({ length: LIMITS.rules }, (_, i) => rule(i, {
+        description: long(LIMITS.name),
+        conditions: Array.from({ length: LIMITS.conditions }, () => cond(Array.from({ length: LIMITS.values }, (_, j) => `${j}${long(LIMITS.value - 3)}`))),
+      })),
+    };
+    expect(validateEnvironmentConfig(atLimit, ctx(pct)).issues).toEqual([]);
+    expect(validateUpdateFlag({
+      name: long(LIMITS.name), owner: long(LIMITS.owner), description: long(LIMITS.description),
+      tags: Array.from({ length: LIMITS.tags }, (_, i) => `${i}${long(LIMITS.tag - 2)}`),
+    }).issues).toEqual([]);
+  });
+
+  it('rejects oversized targeting rules with a path to the field', () => {
+    const v = (config: unknown) => paths(validateEnvironmentConfig(config, ctx(pct)));
+    expect(v({ ...base, rules: Array.from({ length: LIMITS.rules + 1 }, (_, i) => rule(i)) })).toContain('rules');
+    expect(v({ ...base, rules: [rule(0, { id: long(LIMITS.ruleId + 1) })] })).toContain('rules[0].id');
+    expect(v({ ...base, rules: [rule(0, { description: long(LIMITS.name + 1) })] })).toContain('rules[0].description');
+    expect(v({ ...base, rules: [rule(0, { conditions: Array.from({ length: LIMITS.conditions + 1 }, () => cond(['FI'])) })] }))
+      .toContain('rules[0].conditions');
+    expect(v({ ...base, rules: [rule(0, { conditions: [cond(Array.from({ length: LIMITS.values + 1 }, (_, i) => `v${i}`))] })] }))
+      .toContain('rules[0].conditions[0].values');
+    expect(v({ ...base, rules: [rule(0, { conditions: [cond([long(LIMITS.value + 1)])] })] })).toContain('rules[0].conditions[0].values[0]');
+  });
+
+  it('rejects oversized flag and segment text, tags and variants', () => {
+    const flag = { key: 'k_ok', name: 'n', owner: 'o', type: 'boolean' };
+    const create = (extra: object) => paths(validateCreateFlag({ ...flag, ...extra }, new Set()));
+    expect(create({ name: long(LIMITS.name + 1) })).toEqual(['name']);
+    expect(create({ owner: long(LIMITS.owner + 1) })).toEqual(['owner']);
+    expect(create({ description: long(LIMITS.description + 1) })).toEqual(['description']);
+    expect(create({ tags: Array.from({ length: LIMITS.tags + 1 }, (_, i) => `t${i}`) })).toEqual(['tags']);
+    expect(create({ tags: [long(LIMITS.tag + 1)] })).toEqual(['tags[0]']);
+    const variants = Array.from({ length: LIMITS.variants + 1 }, (_, i) => ({ key: `v${i}`, name: `V${i}` }));
+    expect(create({ type: 'multivariate', variants })).toEqual(['variants']);
+    expect(create({ type: 'multivariate', variants: [{ key: 'va', name: long(LIMITS.name + 1) }, { key: 'vb', name: 'B' }] })).toEqual(['variants[0].name']);
+    expect(paths(validateUpdateFlag({ name: long(LIMITS.name + 1) }))).toEqual(['name']);
+    const segment = { key: 'seg', name: 'n', conditions: [cond(['FI'])] };
+    expect(paths(validateSegment({ ...segment, name: long(LIMITS.name + 1) }, new Set(), null))).toEqual(['name']);
+    expect(paths(validateSegment({ ...segment, description: long(LIMITS.description + 1) }, new Set(), null))).toEqual(['description']);
+    expect(paths(validateSegment({ ...segment, conditions: Array.from({ length: LIMITS.conditions + 1 }, () => cond(['FI'])) }, new Set(), null)))
+      .toEqual(['conditions']);
+  });
+
+  it('keeps the seeded data within every limit', async () => {
+    const seeded = await seededContext();
+    const flags = await seeded.store.listFlagsWithConfigs();
+    const segments = await seeded.store.listSegments();
+    expect(flags.length).toBeLessThanOrEqual(LIMITS.flags);
+    expect(segments.length).toBeLessThanOrEqual(LIMITS.segments);
+    for (const f of flags) {
+      expect(validateUpdateFlag({ name: f.name, owner: f.owner, description: f.description, tags: f.tags }).issues).toEqual([]);
+      const context: ConfigContext = {
+        flag: f, flags: new Map(flags.map((x) => [x.key, x])), prerequisitesByFlag: new Map(), segmentKeys: new Set(segments.map((s) => s.key)),
+      };
+      for (const env of ENVIRONMENTS) expect(validateEnvironmentConfig(f.environments[env], context).issues).toEqual([]);
+    }
+    for (const s of segments) expect(validateSegment(s, new Set(), s.key).issues).toEqual([]);
   });
 });

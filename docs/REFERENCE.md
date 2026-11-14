@@ -77,9 +77,24 @@ Rules enforced by the API:
 - Every successful change writes an audit entry with the previous and new state; a save that changes nothing writes none.
 - **Rollback** restores the entry's *previous* config in full, as a new `config.rolled_back` entry. It is re-validated and permission-checked, and history is never modified.
 
+## Limits
+
+Set in `LIMITS` (`apps/api/src/validation/validators.ts`) so no single write can bloat what every client downloads ([decision 14](DECISIONS.md#14-guardrails-for-a-public-deployment-read-only-production-and-size-limits)). Exceeding a field or list limit is a validation error (422) on that path; exceeding a count is 409.
+
+| What | Limit |
+|---|---|
+| Flags (archived included; flags can't be deleted) / segments | 50 / 30 |
+| Key, rule id | 64 characters |
+| Name (flag, variant, segment), rule description, owner | 80 characters |
+| Description (flag, segment) | 500 characters |
+| Tags | 10, each up to 30 characters |
+| Variants | 10 |
+| Rules per config / conditions per rule or segment | 20 / 10 |
+| Values per condition | 50, each up to 100 characters |
+
 ## REST API
 
-JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "details?" } }`. Validation errors return 422 with `issues: [{ path, message }]`. Bodies over 1 MB return 413 (`PAYLOAD_TOO_LARGE`). Mutations need `X-Actor-Id`.
+JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "details?" } }`. Validation errors return 422 with `issues: [{ path, message }]`. Bodies over 64 KB return 413 (`PAYLOAD_TOO_LARGE`). Mutations need `X-Actor-Id`.
 
 | Method | Path | Notes |
 |---|---|---|
