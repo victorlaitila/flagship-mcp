@@ -8,8 +8,8 @@ import type { ServiceContext } from '../src/services/context.js';
 
 export const [developer, releaseManager, admin] = ACTORS as [Actor, Actor, Actor];
 
-export async function seededContext(): Promise<ServiceContext> {
+export async function seededContext({ productionReadOnly = false } = {}): Promise<ServiceContext> {
   const store = new SqliteStore(openDatabase(':memory:'));
   await seed(store, Date.parse('2026-10-01T12:00:00Z'));
-  return { store, notifier: new ChangeNotifier(), now: () => new Date('2026-10-31T12:00:00Z') };
+  return { store, notifier: new ChangeNotifier(), now: () => new Date('2026-10-31T12:00:00Z'), productionReadOnly };
 }

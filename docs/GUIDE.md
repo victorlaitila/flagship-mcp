@@ -109,6 +109,8 @@ Change the rule in the dashboard, Preview it, and watch the banner follow.
 
 Switch to **Leo** and open any flag's Staging or Production tab. It is read-only, and Activity's *Roll back* buttons are disabled there. The API enforces the same rule: a direct request gets HTTP 403.
 
+In the public online demo, Production is read-only for everyone, Admins included, so try changes in Development or Staging there. Locally, Production stays editable for Admins.
+
 ### 6. Audit and rollback
 
 Activity lists every change with its before/after.

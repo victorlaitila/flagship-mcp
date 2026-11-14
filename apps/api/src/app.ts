@@ -1,4 +1,4 @@
-import type { ApiErrorBody, ChangeEvent } from '@flagship/shared';
+import type { ApiErrorBody, ChangeEvent, ServerSettings } from '@flagship/shared';
 import express, { type ErrorRequestHandler } from 'express';
 import { ACTORS, DEMO_USERS } from './demo.js';
 import { AppError } from './errors.js';
@@ -23,6 +23,7 @@ export function createApp(ctx: ServiceContext): express.Express {
   app.get('/api/actors', (_req, res) => void res.json(ACTORS));
   app.get('/api/demo-users', (_req, res) => void res.json(DEMO_USERS));
   app.get('/api/whoami', (req, res) => void res.json(requireActor(req)));
+  app.get('/api/settings', (_req, res) => void res.json({ productionReadOnly: ctx.productionReadOnly } satisfies ServerSettings));
   // ?environments=staging,production compares just those; default compares all three.
   app.get('/api/environments/compare', async (req, res) => {
     const environments = typeof req.query.environments === 'string'

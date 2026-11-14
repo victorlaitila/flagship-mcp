@@ -13,6 +13,7 @@ import type {
   PreviewResult,
   SegmentInput,
   SegmentWithUsage,
+  ServerSettings,
   UpdateFlagInput,
   ValidationIssue,
 } from '@flagship/shared';
@@ -63,6 +64,7 @@ const qs = (params: Record<string, string | undefined>) => {
 export const api = {
   actors: () => request<Actor[]>('/actors'),
   demoUsers: () => request<DemoUser[]>('/demo-users'),
+  settings: () => request<ServerSettings>('/settings'),
 
   flags: () => request<FlagWithConfigs[]>('/flags'),
   flag: (key: string) => request<FlagWithConfigs>(`/flags/${key}`),

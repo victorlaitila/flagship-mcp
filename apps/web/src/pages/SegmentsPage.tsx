@@ -1,4 +1,4 @@
-import { canManageGlobalConfig, type Condition, type DemoUser, type SegmentWithUsage, type ValidationIssue } from '@flagship/shared';
+import { canManageGlobalConfig, PRODUCTION_READ_ONLY_MESSAGE, type Condition, type DemoUser, type SegmentWithUsage, type ValidationIssue } from '@flagship/shared';
 import { Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -101,9 +101,11 @@ function DeleteSegmentModal({ segment, onClose }: { segment: SegmentWithUsage; o
   );
 }
 
-function SegmentCard({ segment, users, canEdit, onEdit, onDelete }: {
-  segment: SegmentWithUsage; users: DemoUser[]; canEdit: boolean; onEdit: () => void; onDelete: () => void;
+function SegmentCard({ segment, users, canEdit, productionReadOnly, onEdit, onDelete }: {
+  segment: SegmentWithUsage; users: DemoUser[]; canEdit: boolean; productionReadOnly: boolean; onEdit: () => void; onDelete: () => void;
 }) {
+  // Editing a segment used by Production rules would change Production.
+  const productionLocked = productionReadOnly && segment.references.some((r) => r.environment === 'production');
   const members = users.filter((u) => segment.matchingDemoUserIds.includes(u.userId));
   const flagsUsing = [...new Set(segment.references.map((r) => r.flagKey))];
   return (
@@ -115,7 +117,7 @@ function SegmentCard({ segment, users, canEdit, onEdit, onDelete }: {
           {segment.description && <p className="mt-1.5 text-sm text-muted">{segment.description}</p>}
         </div>
         <div className="flex shrink-0 gap-1">
-          <button disabled={!canEdit} onClick={onEdit} title={canEdit ? 'Edit' : 'Only admins can edit segments'} className="rounded p-1.5 text-faint hover:bg-raised hover:text-fg disabled:opacity-40" aria-label="Edit segment"><Pencil className="size-3.5" /></button>
+          <button disabled={!canEdit || productionLocked} onClick={onEdit} title={!canEdit ? 'Only admins can edit segments' : productionLocked ? PRODUCTION_READ_ONLY_MESSAGE : 'Edit'} className="rounded p-1.5 text-faint hover:bg-raised hover:text-fg disabled:opacity-40" aria-label="Edit segment"><Pencil className="size-3.5" /></button>
           <button disabled={!canEdit} onClick={onDelete} title={canEdit ? 'Delete' : 'Only admins can delete segments'} className="rounded p-1.5 text-faint hover:bg-raised hover:text-danger disabled:opacity-40" aria-label="Delete segment"><Trash2 className="size-3.5" /></button>
         </div>
       </header>
@@ -138,7 +140,7 @@ function SegmentCard({ segment, users, canEdit, onEdit, onDelete }: {
 export function SegmentsPage() {
   const segments = useLiveResource(api.segments, []);
   const users = useLiveResource(api.demoUsers, []);
-  const { actor } = useActor();
+  const { actor, productionReadOnly } = useActor();
   const [editing, setEditing] = useState<SegmentWithUsage | 'new' | null>(null);
   const [deleting, setDeleting] = useState<SegmentWithUsage | null>(null);
   const canEdit = actor !== null && canManageGlobalConfig(actor.role);
@@ -156,7 +158,7 @@ export function SegmentsPage() {
         : (
           <div className="grid gap-4 md:grid-cols-2">
             {segments.data.map((s) => (
-              <SegmentCard key={s.key} segment={s} users={users.data!} canEdit={canEdit} onEdit={() => setEditing(s)} onDelete={() => setDeleting(s)} />
+              <SegmentCard key={s.key} segment={s} users={users.data!} canEdit={canEdit} productionReadOnly={productionReadOnly} onEdit={() => setEditing(s)} onDelete={() => setDeleting(s)} />
             ))}
           </div>
         )}

@@ -23,6 +23,8 @@ These prevent real bugs; don't break them without an explicit decision (and a ne
 - Reviews and previews show the preview endpoint's normalized `config`, never a client-side merged draft.
 - The MCP server (`apps/mcp`) is an API client only: no SQLite access, no evaluation or validation, and it never sends `confirmProduction`. Its writes carry the `planRevision` from a plan.
 - Permissions and Production confirmation are enforced in the backend; the UI only mirrors them.
+- Anything that can change Production evaluation calls `assertProductionWritable` before Production confirmation: Production config writes and rollbacks, archiving or restoring a flag enabled in Production, editing a segment used by Production rules. A new write path that can reach Production needs it too.
+- The app is being prepared for a public deployment: treat every endpoint as reachable by anyone, with any input. Guardrail settings fail closed: an invalid value stops startup instead of switching the guardrail off.
 - Live updates: change events are invalidation signals and clients refetch. Keep the SSE heartbeat (`SSE_HEARTBEAT_MS`), the client watchdog (`STALE_AFTER_MS` in `apps/web/src/hooks/useLive.ts`) and the Vite proxy's stream-closing fix together; removing one brings back silently dead live updates.
 - React effects return only `undefined` or a cleanup function, and clean up subscriptions and listeners.
 

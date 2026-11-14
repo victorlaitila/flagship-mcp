@@ -17,7 +17,7 @@ import { DEMO_USERS } from '../demo.js';
 import { AppError, invalid, notFound } from '../errors.js';
 import { evaluateFlag } from '../evaluation/engine.js';
 import { validateCreateFlag, validateEnvironmentConfig, validateUpdateFlag } from '../validation/validators.js';
-import { assertCanManageEnvironment, assertCanManageGlobal, assertProductionConfirmed, type ServiceContext } from './context.js';
+import { assertCanManageEnvironment, assertCanManageGlobal, assertProductionConfirmed, assertProductionWritable, type ServiceContext } from './context.js';
 import { loadSnapshot } from './evaluation.js';
 
 export function listFlags(ctx: ServiceContext): Promise<FlagWithConfigs[]> {
@@ -112,7 +112,10 @@ export async function setFlagStatus(
     }
   }
   // Archiving or restoring a flag that is enabled in Production changes Production evaluation.
-  if (configs.production.enabled) assertProductionConfirmed('production', confirmProduction);
+  if (configs.production.enabled) {
+    assertProductionWritable(ctx);
+    assertProductionConfirmed('production', confirmProduction);
+  }
   const next: Flag = { ...flag, status, updatedAt: ctx.now().toISOString() };
   const auditId = await ctx.store.commit([{ type: 'putFlag', flag: next }], {
     timestamp: next.updatedAt, actor, operation: status === 'archived' ? 'flag.archived' : 'flag.restored',
@@ -161,6 +164,7 @@ export async function applyConfig(
 ): Promise<AppliedConfig> {
   const flag = await requireFlag(ctx, flagKey);
   assertCanManageEnvironment(actor, environment);
+  if (environment === 'production') assertProductionWritable(ctx);
   assertProductionConfirmed(environment, confirmProduction);
   const { value, issues } = await validateAgainstCurrentState(ctx, flag, environment, input);
   if (!value) throw invalid(issues, 'Configuration is invalid.');

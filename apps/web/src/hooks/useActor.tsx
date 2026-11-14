@@ -15,17 +15,21 @@ interface ActorState {
   actors: Actor[];
   actor: Actor | null;
   setActor: (id: string) => void;
+  /** Mirrors the backend's PRODUCTION_READ_ONLY; the backend enforces it either way. */
+  productionReadOnly: boolean;
 }
 
-const ActorContext = createContext<ActorState>({ actors: [], actor: null, setActor: () => {} });
+const ActorContext = createContext<ActorState>({ actors: [], actor: null, setActor: () => {}, productionReadOnly: false });
 
 /** Simulated dashboard identity. The API derives permissions from the selected actor id. */
 export function ActorProvider({ children }: { children: ReactNode }) {
   const [actors, setActors] = useState<Actor[]>([]);
   const [actorId, setId] = useState<string | null>(read);
+  const [productionReadOnly, setProductionReadOnly] = useState(false);
 
   useEffect(() => {
     api.actors().then(setActors, () => setActors([]));
+    api.settings().then((s) => setProductionReadOnly(s.productionReadOnly), () => {});
   }, []);
 
   const actor = actors.find((a) => a.id === actorId) ?? actors.at(-1) ?? null;
@@ -41,7 +45,7 @@ export function ActorProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  return <ActorContext.Provider value={{ actors, actor, setActor }}>{children}</ActorContext.Provider>;
+  return <ActorContext.Provider value={{ actors, actor, setActor, productionReadOnly }}>{children}</ActorContext.Provider>;
 }
 
 export const useActor = () => useContext(ActorContext);

@@ -209,3 +209,9 @@ describe('REST API', () => {
     expect(Date.now() - started).toBeLessThan(SSE_HEARTBEAT_MS + 1000);
   }, SSE_HEARTBEAT_MS + 3000);
 });
+
+describe('settings', () => {
+  it('reports that Production is writable by default', async () => {
+    expect((await call('/settings')).body).toEqual({ productionReadOnly: false });
+  });
+});

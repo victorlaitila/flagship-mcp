@@ -4,7 +4,7 @@ import { DEMO_USERS } from '../demo.js';
 import { AppError, invalid, notFound } from '../errors.js';
 import { userInSegment } from '../evaluation/engine.js';
 import { validateSegment } from '../validation/validators.js';
-import { assertCanManageGlobal, type ServiceContext } from './context.js';
+import { assertCanManageGlobal, assertProductionWritable, type ServiceContext } from './context.js';
 
 function findReferences(flags: FlagWithConfigs[], segmentKey: string): SegmentReference[] {
   return flags.flatMap((flag) =>
@@ -53,13 +53,16 @@ export async function createSegment(ctx: ServiceContext, actor: Actor, input: un
 export async function updateSegment(ctx: ServiceContext, actor: Actor, key: string, input: unknown): Promise<SegmentWithUsage> {
   assertCanManageGlobal(actor, 'manage segments (they apply to every environment)');
   const previous = await requireSegment(ctx, key);
+  // Production rules that use the segment would change with it.
+  const flags = await ctx.store.listFlagsWithConfigs();
+  if (findReferences(flags, key).some((r) => r.environment === 'production')) assertProductionWritable(ctx);
   const { value, issues } = validateSegment(input, new Set(), key);
   if (!value) throw invalid(issues);
   const next: Segment = { ...previous, ...value, key, updatedAt: ctx.now().toISOString() };
   const auditId = await ctx.store.commit([{ type: 'putSegment', segment: next }],
     { timestamp: next.updatedAt, actor, operation: 'segment.updated', segmentKey: key, previous, next });
   ctx.notifier.publish({ entity: 'segment', segmentKey: key, auditId });
-  return withUsage(next, await ctx.store.listFlagsWithConfigs());
+  return withUsage(next, flags);
 }
 
 /** Referenced segments cannot be deleted: rules would silently stop matching. */

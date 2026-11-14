@@ -203,6 +203,14 @@ export function canManageEnvironment(role: Role, environment: Environment): bool
   return ROLE_ENVIRONMENTS[role].includes(environment);
 }
 
+/** Shown when a deployment runs with PRODUCTION_READ_ONLY: the backend refuses anything that would change Production. */
+export const PRODUCTION_READ_ONLY_MESSAGE = 'Production is read-only in this public demo. Try changes in Development or Staging.';
+
+/** Deployment settings clients mirror in the UI (GET /api/settings). */
+export interface ServerSettings {
+  productionReadOnly: boolean;
+}
+
 /** Archiving flags and editing segments affect production, so they require admin. */
 export function canManageGlobalConfig(role: Role): boolean {
   return role === 'admin';

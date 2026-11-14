@@ -1,8 +1,10 @@
 import {
   canManageEnvironment,
   canManageGlobalConfig,
+  ENVIRONMENT_LABELS,
   ENVIRONMENTS,
   FLAG_TYPE_LABELS,
+  PRODUCTION_READ_ONLY_MESSAGE,
   type Environment,
   type FlagWithConfigs,
   type PreviewResult,
@@ -56,11 +58,13 @@ function EditDetailsModal({ flag, open, onClose }: { flag: FlagWithConfigs; open
 }
 
 function FlagHeader({ flag }: { flag: FlagWithConfigs }) {
-  const { actor } = useActor();
+  const { actor, productionReadOnly } = useActor();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const isAdmin = actor !== null && canManageGlobalConfig(actor.role);
+  // Archiving or restoring a flag enabled in Production changes Production.
+  const productionLocked = productionReadOnly && flag.environments.production.enabled;
   const archiving = flag.status === 'active';
   const toggleArchive = async (confirmProduction = false) => {
     setConfirming(false);
@@ -94,8 +98,8 @@ function FlagHeader({ flag }: { flag: FlagWithConfigs }) {
           <Button onClick={() => setEditing(true)}><Pencil className="size-3.5" /> Edit details</Button>
           <Button
             variant={flag.status === 'active' ? 'danger' : 'secondary'}
-            disabled={!isAdmin}
-            title={isAdmin ? undefined : 'Only admins can archive or restore flags'}
+            disabled={!isAdmin || productionLocked}
+            title={!isAdmin ? 'Only admins can archive or restore flags' : productionLocked ? PRODUCTION_READ_ONLY_MESSAGE : undefined}
             onClick={() => (flag.environments.production.enabled ? setConfirming(true) : toggleArchive())}
           >
             {archiving ? <><Archive className="size-3.5" /> Archive</> : <><ArchiveRestore className="size-3.5" /> Restore</>}
@@ -162,7 +166,7 @@ export function FlagDetailPage() {
   const { key = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const environment = (ENVIRONMENTS.find((e) => e === params.get('env')) ?? 'development') as Environment;
-  const { actor } = useActor();
+  const { actor, productionReadOnly } = useActor();
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const flags = useLiveResource(api.flags, []);
   const segments = useLiveResource(api.segments, []);
@@ -203,7 +207,11 @@ export function FlagDetailPage() {
           persisted={flag.environments[environment]}
           flags={flags.data}
           segments={segments.data}
-          canEdit={actor !== null && canManageEnvironment(actor.role, environment)}
+          lockedReason={
+            actor === null || !canManageEnvironment(actor.role, environment)
+              ? `Your role cannot change ${ENVIRONMENT_LABELS[environment]}. Switch identity in the sidebar to edit.`
+              : environment === 'production' && productionReadOnly ? PRODUCTION_READ_ONLY_MESSAGE : null
+          }
           onPreview={setPreview}
         />
         <div className="space-y-6">

@@ -5,7 +5,7 @@ import { listAudit, rollback } from '../src/services/audit.js';
 import type { ServiceContext } from '../src/services/context.js';
 import { evaluateOne } from '../src/services/evaluation.js';
 import { applyConfig, compareEnvironments, createFlag, getFlag, previewConfig, setFlagStatus } from '../src/services/flags.js';
-import { deleteSegment, listSegments, updateSegment } from '../src/services/segments.js';
+import { createSegment, deleteSegment, listSegments, updateSegment } from '../src/services/segments.js';
 import { admin, developer, releaseManager, seededContext } from './helpers.js';
 
 let ctx: ServiceContext;
@@ -214,5 +214,40 @@ describe('atomicity', () => {
     });
     const current = await config('ai_recommendations', 'development');
     expect((await applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 40 }, false)).config.rolloutPercentage).toBe(40);
+  });
+});
+
+describe('production read-only', () => {
+  beforeEach(async () => {
+    ctx = await seededContext({ productionReadOnly: true });
+  });
+
+  it('refuses Production config changes and rollbacks, even confirmed by an admin', async () => {
+    const before = await config('loyalty_program', 'production');
+    expect(await errorCode(applyConfig(ctx, admin, 'loyalty_program', 'production', { ...before, enabled: false }, true))).toBe('FORBIDDEN');
+    const [seeded] = await listAudit(ctx, { flagKey: 'ai_recommendations', environment: 'production' });
+    expect(await errorCode(rollback(ctx, admin, seeded.id, true))).toBe('FORBIDDEN');
+    expect(await config('loyalty_program', 'production')).toEqual(before);
+    expect((await config('ai_recommendations', 'production')).rolloutPercentage).not.toBe(10);
+  });
+
+  it('still allows changes to other environments', async () => {
+    const staging = await config('loyalty_program', 'staging');
+    await applyConfig(ctx, admin, 'loyalty_program', 'staging', { ...staging, enabled: false }, false);
+    expect((await config('loyalty_program', 'staging')).enabled).toBe(false);
+  });
+
+  it('refuses archiving or restoring a flag enabled in Production, but not one disabled there', async () => {
+    expect(await errorCode(setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived', true))).toBe('FORBIDDEN');
+    expect((await getFlag(ctx, 'free_shipping_banner')).status).toBe('active');
+    expect((await setFlagStatus(ctx, admin, 'loyalty_rewards', 'archived')).status).toBe('archived');
+  });
+
+  it('refuses editing a segment used by Production rules, but not other segments', async () => {
+    const segment = { name: 'Changed', conditions: [{ attribute: 'country', operator: 'in', values: ['SE'] }] };
+    expect(await errorCode(updateSegment(ctx, admin, 'finnish_customers', segment))).toBe('FORBIDDEN');
+    expect((await listSegments(ctx)).find((s) => s.key === 'finnish_customers')!.name).not.toBe('Changed');
+    await createSegment(ctx, admin, { key: 'swedish_customers', name: 'Swedish customers', conditions: segment.conditions });
+    expect((await updateSegment(ctx, admin, 'swedish_customers', segment)).name).toBe('Changed');
   });
 });

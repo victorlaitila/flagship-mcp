@@ -1,4 +1,4 @@
-import { canManageEnvironment, ROLE_LABELS, type AuditEntry, type AuditOperation, type EnvironmentConfig, type PreviewResult } from '@flagship/shared';
+import { canManageEnvironment, PRODUCTION_READ_ONLY_MESSAGE, ROLE_LABELS, type AuditEntry, type AuditOperation, type EnvironmentConfig, type PreviewResult } from '@flagship/shared';
 import { ChevronRight, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -37,14 +37,16 @@ interface RollbackPlan {
 }
 
 function RollbackButton({ entry }: { entry: AuditEntry }) {
-  const { actor } = useActor();
+  const { actor, productionReadOnly } = useActor();
   const [open, setOpen] = useState(false);
   const [plan, setPlan] = useState<RollbackPlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const flagKey = entry.flagKey!;
   const env = entry.environment!;
-  const allowed = actor !== null && canManageEnvironment(actor.role, env);
+  const roleAllowed = actor !== null && canManageEnvironment(actor.role, env);
+  const productionLocked = productionReadOnly && env === 'production';
+  const allowed = roleAllowed && !productionLocked;
 
   // Rollback restores the full previous config over whatever is stored now, so preview it against that.
   const loadPlan = async () => {
@@ -87,7 +89,7 @@ function RollbackButton({ entry }: { entry: AuditEntry }) {
 
   return (
     <>
-      <Button size="sm" disabled={!allowed} title={allowed ? undefined : 'Your role cannot change this environment'} onClick={show}>
+      <Button size="sm" disabled={!allowed} title={!roleAllowed ? 'Your role cannot change this environment' : productionLocked ? PRODUCTION_READ_ONLY_MESSAGE : undefined} onClick={show}>
         <RotateCcw className="size-3" /> Roll back
       </Button>
       <Modal

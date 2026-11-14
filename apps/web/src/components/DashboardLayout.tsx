@@ -21,7 +21,7 @@ const ROLE_TONE: Record<Role, string> = {
 };
 
 function IdentitySwitcher() {
-  const { actors, actor, setActor } = useActor();
+  const { actors, actor, setActor, productionReadOnly } = useActor();
   if (!actor) return null;
   return (
     <div className="space-y-2 rounded-lg border border-line bg-canvas/60 p-3">
@@ -41,7 +41,7 @@ function IdentitySwitcher() {
       </select>
       <div className="flex flex-wrap gap-x-2.5 gap-y-1">
         <span className="text-[11px] text-faint">Can edit</span>
-        {ROLE_ENVIRONMENTS[actor.role].map((env) => <EnvLabel key={env} env={env} short />)}
+        {ROLE_ENVIRONMENTS[actor.role].filter((env) => !(productionReadOnly && env === 'production')).map((env) => <EnvLabel key={env} env={env} short />)}
       </div>
       <p className="text-[11px] leading-snug text-faint">Simulated identity for demo purposes. No real authentication.</p>
     </div>

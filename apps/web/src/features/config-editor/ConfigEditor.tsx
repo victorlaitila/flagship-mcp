@@ -120,13 +120,14 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
   );
 }
 
-export function ConfigEditor({ flag, environment, persisted, flags, segments, canEdit, onPreview }: {
+export function ConfigEditor({ flag, environment, persisted, flags, segments, lockedReason, onPreview }: {
   flag: Flag;
   environment: Environment;
   persisted: EnvironmentConfig;
   flags: Flag[];
   segments: Segment[];
-  canEdit: boolean;
+  /** Why the current identity can't edit this environment; null when it can. */
+  lockedReason: string | null;
   onPreview: (result: PreviewResult | null) => void;
 }) {
   // `latest` is the newest stored config this editor knows of; `base` is the one the draft started from.
@@ -142,7 +143,7 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
   const dirty = !same(draft, base);
   // Saving would overwrite a change made elsewhere; the backend would refuse it (expectedConfig) anyway.
   const conflict = dirty && !same(latest, base);
-  const disabled = !canEdit || flag.status === 'archived';
+  const disabled = lockedReason !== null || flag.status === 'archived';
 
   // React only to new values of `persisted`. Comparing it with `base` instead would treat the list's
   // pre-save copy as a live update and revert the editor right after a save.
@@ -263,9 +264,9 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, ca
 
   return (
     <div className="rounded-lg border border-line bg-surface">
-      {!canEdit && (
+      {lockedReason !== null && (
         <div className="flex items-center gap-2 border-b border-line bg-raised/50 px-4 py-2 text-xs text-muted">
-          <Lock className="size-3.5" /> Your role cannot change {ENVIRONMENT_LABELS[environment]}. Switch identity in the sidebar to edit.
+          <Lock className="size-3.5" /> {lockedReason}
         </div>
       )}
       {flag.status === 'archived' && (

@@ -70,6 +70,7 @@ Rules enforced by the API:
 
 - Config changes and rollbacks are limited by role and environment (403 otherwise).
 - Production writes require `confirmProduction: true` (428 otherwise). This includes archiving or restoring a flag that is enabled in Production. The dashboard sends it only from its confirmation dialogs; the MCP server never sends it.
+- **Production read-only** (`PRODUCTION_READ_ONLY=true`, for the public deployment): every change that would alter Production evaluation is refused with 403, for every role and even when confirmed. That covers Production config writes and rollbacks, archiving or restoring a flag enabled in Production, and editing a segment that Production rules use. The check runs before Production confirmation. The dashboard reads `/api/settings` and disables these actions.
 - Archiving or restoring flags and managing segments are admin-only. Any role can create flags and edit flag metadata.
 - A flag can't be archived while it is a prerequisite of an active flag, or restored while one of its own prerequisites is archived. A segment can't be deleted while rules reference it (409, with the references).
 - **Stale writes:** when a config write or rollback includes `expectedConfig`, it is refused with 409 if the stored config differs. The dashboard and MCP server always send it.
@@ -97,6 +98,7 @@ JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "d
 | GET | `/api/audit/:id` | One entry |
 | POST | `/api/audit/:id/rollback` | `{ expectedConfig?, confirmProduction? }`, `X-Audit-Id` as above |
 | GET | `/api/actors`, `/api/demo-users`, `/api/whoami` | Dashboard identities, storefront customers, the caller's identity |
+| GET | `/api/settings` | `{ productionReadOnly }` |
 | GET | `/api/events` | Server-sent events (described below) |
 
 ### Live updates (`/api/events`)
@@ -135,6 +137,7 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 |---|---|---|
 | `PORT` | `4000` | API port |
 | `DATABASE_PATH` | `apps/api/data/flagship.db` | API database file |
+| `PRODUCTION_READ_ONLY` | `false` | API: refuse every change to Production (see permissions). Only `true` or `false`; any other value stops the API at startup |
 | `API_URL` | `http://localhost:4000` | Web dev/preview proxy target |
 | `FLAGSHIP_API_URL` | `http://localhost:4000` | MCP server: API to call |
 | `FLAGSHIP_ACTOR_ID` | `claude-code` | MCP server: identity |
