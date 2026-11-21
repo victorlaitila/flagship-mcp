@@ -1,0 +1,7 @@
+{
+  "app": "npx tsx bin/flagship.ts",
+  "context": {
+    "reservedConcurrency": "none",
+    "webAclArn": "arn:aws:wafv2:us-east-1:612468269152:global/webacl/CreatedByCloudFront-660191ef/2b2d0791-6394-4aac-a914-d4378572a061"
+  }
+}

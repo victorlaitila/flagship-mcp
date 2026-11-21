@@ -1,0 +1,21 @@
+{
+  "name": "@flagship/infra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "cdk": "cdk",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-apigatewayv2": "3.1164.0",
+    "@aws-sdk/client-lambda": "3.1164.0",
+    "aws-cdk": "2.1148.0",
+    "aws-cdk-lib": "2.275.0",
+    "constructs": "10.8.1",
+    "esbuild": "0.28.2",
+    "tsx": "^4.23.15",
+    "vitest": "5.0.5"
+  }
+}

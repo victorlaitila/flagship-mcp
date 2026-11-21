@@ -112,6 +112,10 @@ describe('REST API', () => {
     expect((await call('/health')).headers.get('x-powered-by')).toBeNull();
   });
 
+  it('marks every API response, errors included, as never cacheable', async () => {
+    for (const path of ['/flags', '/audit?limit=1', '/no-such-endpoint']) expect((await call(path)).headers.get('cache-control')).toBe('no-store');
+  });
+
   it('rejects unknown metadata fields and audits only real metadata changes', async () => {
     const audited = async () => (await call('/audit?flagKey=loyalty_rewards&operation=flag.updated')).body.length;
     const before = (await call('/flags/loyalty_rewards')).body;

@@ -167,12 +167,33 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 | `FLAGSHIP_API_URL` | `http://localhost:4000` | MCP server: API to call |
 | `FLAGSHIP_ACTOR_ID` | `claude-code` | MCP server: identity |
 
+## Deployment (AWS)
+
+The public demo runs from `infra/` (AWS CDK) in the dedicated `flagship` account; the account and regions are pinned in `infra/bin/flagship.ts`.
+
+| Stack | Region | Contents |
+|---|---|---|
+| `Flagship` | eu-north-1 | DynamoDB table, Lambda functions from `apps/api/src/lambda.ts` (`api`, `live`, `reset`), HTTP API, WebSocket API (pings answered by a mock route), nightly reset at 03:00 Europe/Helsinki, S3 bucket and CloudFront (`/api/live` → WebSocket API, `/api/*` → HTTP API, the rest → the web app) |
+| `FlagshipKillSwitch` | us-east-1 | $1 monthly cost budget → SNS (email and kill-switch Lambda); Budgets can only be created there |
+
+Guardrails are in `GUARDRAILS` (`infra/lib/flagship-stack.ts`) and pinned by `infra/test/stack.test.ts`:
+
+- HTTP API 10 requests/s (burst 30), WebSocket API 5/s (burst 10). Lower limits refused ordinary page loads at random, since API Gateway spreads throttling over many nodes.
+- At most 10 concurrent Lambda executions (the account quota; it leaves none to reserve).
+- DynamoDB provisioned at 25 read / 25 write units, the always-free allowance and a hard ceiling.
+- Logs kept 7 days; no VPC, NAT, custom domain or Route 53.
+- CloudFront is on the free flat-rate plan (no overage charges). The plan's WAF web ACL, with a per-IP rate rule of 600 requests per 5 minutes, is managed in the console; the stack only keeps it attached (`webAclArn` in `infra/cdk.json`).
+- Kill switch: when actual monthly cost passes $1, it sets the API and live functions' concurrency to 0 and both API throttles to 0. Restore with `aws lambda invoke --region us-east-1 --function-name <KillSwitchFunction output> --cli-binary-format raw-in-base64-out --payload '{"action":"restore"}' out.json`.
+
+Deploying by hand: `npm run build`, then from `infra/`: `npx cdk deploy --all --profile flagship -c alertEmail=<email>`. After the first deploy, invoke the `reset` function once to seed the table.
+
 ## Tests
 
 | Suite | Location | Covers |
 |---|---|---|
 | API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity, overlapping writes), HTTP integration including the WebSocket; `dynamo-store.test.ts` covers the DynamoDB cache and concurrent instances; `aws.test.ts` the Lambda handlers, connection cap and reset |
 | MCP | `apps/mcp/test` | Every tool through the SDK client against a real in-process API: plan/apply binding, normalization, stale plans, Production refusal, failure modes. `stdio.test.ts` also starts the real server process over stdio, as Claude Code does. |
+| Infra | `infra/test` | The CDK stacks' guardrails: throttles, capacity, log retention, read-only Production, kill switch, nightly reset, no API caching, no fixed-cost resources |
 | Web | `apps/web/test` | Live-update connection: backoff, reconnect, resync, dead-stream detection |
 | E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, archiving in Production, the store flag counter, malformed storefront data, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |
 

@@ -40,6 +40,7 @@ apps/api          Express + SQLite: the single source of truth for configuration
 apps/web          React app: dashboard (/) and demo storefront (/store)
 apps/mcp          MCP server for AI assistants; a plain HTTP client of the API
 e2e               Playwright end-to-end tests
+infra             AWS CDK stacks for the public demo (see docs/REFERENCE.md, Deployment)
 ```
 
 ## Commands

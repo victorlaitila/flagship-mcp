@@ -4,12 +4,13 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "infra"
   ],
   "scripts": {
     "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w @flagship/api\" \"npm run dev -w @flagship/web\"",
-    "build": "npm run typecheck -w @flagship/shared && npm run build -w @flagship/api && npm run build -w @flagship/mcp && npm run build -w @flagship/web",
-    "test": "npm test -w @flagship/api && npm test -w @flagship/mcp && npm test -w @flagship/web",
+    "build": "npm run typecheck -w @flagship/shared && npm run build -w @flagship/api && npm run build -w @flagship/mcp && npm run build -w @flagship/web && npm run typecheck -w @flagship/infra",
+    "test": "npm test -w @flagship/api && npm test -w @flagship/mcp && npm test -w @flagship/web && npm test -w @flagship/infra",
     "db:reset": "npm run db:reset -w @flagship/api",
     "mcp": "tsx apps/mcp/src/index.ts",
     "start": "concurrently -n api,web \"npm start -w @flagship/api\" \"npm run preview -w @flagship/web\"",

@@ -14,6 +14,8 @@ import { compareEnvironments } from './services/flags.js';
 export function createApp(ctx: ServiceContext): express.Express {
   const app = express();
   app.disable('x-powered-by');
+  // Every answer reflects live data; CloudFront and browsers must never serve one from a cache.
+  app.use('/api', (_req, res, next) => (res.set('Cache-Control', 'no-store'), next()));
   // Generous for any real config (a few KB) while keeping abusive payloads out.
   app.use(express.json({ limit: '64kb' }));
   // Deeply nested input could overflow the stack in validation or messages; real bodies nest about 6 levels.
