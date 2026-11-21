@@ -15,7 +15,9 @@
     "mcp": "tsx apps/mcp/src/index.ts",
     "start": "concurrently -n api,web \"npm start -w @flagship/api\" \"npm run preview -w @flagship/web\"",
     "test:e2e": "playwright test",
-    "test:all": "npm test && npm run test:e2e"
+    "test:all": "npm test && npm run test:e2e",
+    "demo:stop": "node infra/scripts/demo.mjs stop",
+    "demo:restore": "node infra/scripts/demo.mjs restore"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

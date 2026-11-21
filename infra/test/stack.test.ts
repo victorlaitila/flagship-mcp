@@ -67,6 +67,7 @@ describe('Flagship stack guardrails', () => {
       .find((f) => f.Properties.Environment?.Variables?.KILL_SWITCH_CONFIG)!.Properties.Environment.Variables.KILL_SWITCH_CONFIG);
     // The names it stops must be the names the app stack gives its functions and APIs.
     expect(config).toMatchObject({ region: 'eu-north-1', functions: ['flagship-api', 'flagship-live'] });
+    kill.hasResourceProperties('AWS::Lambda::Function', { FunctionName: 'flagship-kill-switch' }); // infra/scripts/demo.mjs
     template.hasResourceProperties('AWS::Lambda::Function', { FunctionName: 'flagship-api' });
     template.hasResourceProperties('AWS::Lambda::Function', { FunctionName: 'flagship-live' });
     for (const stage of config.stages) template.hasResourceProperties('AWS::ApiGatewayV2::Api', { Name: stage.apiName });
@@ -92,5 +93,15 @@ describe('Flagship stack guardrails', () => {
       .map((f) => f.Properties.ReservedConcurrentExecutions);
     expect(reserved(template)).toEqual([undefined, undefined, undefined]);
     expect(reserved(synth(5))).toEqual([5, 5, 5]);
+  }, 120_000);
+
+  it('serves a custom domain with its certificate when one is configured', () => {
+    const certificateArn = 'arn:aws:acm:us-east-1:111111111111:certificate/test';
+    const withDomain = Template.fromStack(new FlagshipStack(new App(), 'TestDomain', {
+      env, reservedConcurrency: null, webDist, domain: { name: 'flagship.example.com', certificateArn },
+    }));
+    const config = Object.values(withDomain.findResources('AWS::CloudFront::Distribution'))[0].Properties.DistributionConfig;
+    expect(config.Aliases).toEqual(['flagship.example.com']);
+    expect(config.ViewerCertificate).toMatchObject({ AcmCertificateArn: certificateArn, SslSupportMethod: 'sni-only' });
   }, 120_000);
 });

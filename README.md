@@ -53,6 +53,7 @@ infra             AWS CDK stacks for the public demo (see docs/REFERENCE.md, Dep
 | `npm run test:e2e` | Browser tests (Playwright) on an isolated stack; one-time setup: `npx playwright install chromium` |
 | `npm run build` | Typecheck everything and build the web app |
 | `npm run db:reset` | Delete and re-seed the local database |
+| `npm run demo:stop` / `demo:restore` | Take the public demo's API offline or bring it back (needs AWS access) |
 
 ## Limitations
 

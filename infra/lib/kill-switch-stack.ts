@@ -45,6 +45,7 @@ export class KillSwitchStack extends Stack {
     };
     const root = fileURLToPath(new URL('../../', import.meta.url));
     const killSwitch = new NodejsFunction(this, 'KillSwitchFn', {
+      functionName: NAMES.killSwitch,
       entry: fileURLToPath(new URL('../lambda/kill-switch.ts', import.meta.url)),
       projectRoot: root,
       depsLockFilePath: `${root}package-lock.json`,

@@ -16,7 +16,7 @@ const apis = new ApiGatewayV2Client({ region: config.region });
 
 /**
  * Budget alarm (via SNS): stops all API and live-update traffic, so spending stops growing.
- * Restore by hand: `aws lambda invoke --region us-east-1 --function-name <this function> --payload '{"action":"restore"}' out.json`.
+ * By hand: `npm run demo:stop` and `npm run demo:restore`.
  */
 export async function handler(event: { action?: string }): Promise<string> {
   const restore = event?.action === 'restore';

@@ -12,6 +12,13 @@ const reservedConcurrency = reserved === undefined || reserved === 'none' ? null
 // Pinned: these stacks only ever deploy to the dedicated flagship account.
 const account = '612468269152';
 const region = 'eu-north-1';
-new FlagshipStack(app, 'Flagship', { env: { account, region }, reservedConcurrency, webAclArn: app.node.tryGetContext('webAclArn') });
+const domainName = app.node.tryGetContext('domainName');
+const certificateArn = app.node.tryGetContext('certificateArn');
+new FlagshipStack(app, 'Flagship', {
+  env: { account, region },
+  reservedConcurrency,
+  webAclArn: app.node.tryGetContext('webAclArn'),
+  domain: domainName && certificateArn ? { name: domainName, certificateArn } : undefined,
+});
 new KillSwitchStack(app, 'FlagshipKillSwitch', { env: { account, region: 'us-east-1' }, appRegion: region, alertEmail, reservedConcurrency });
 Tags.of(app).add('project', 'flagship');

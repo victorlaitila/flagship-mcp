@@ -169,7 +169,7 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 
 ## Deployment (AWS)
 
-The public demo runs from `infra/` (AWS CDK) in the dedicated `flagship` account; the account and regions are pinned in `infra/bin/flagship.ts`.
+The public demo runs at https://flagship.victorlaitila.com from `infra/` (AWS CDK) in the dedicated `flagship` account; the account and regions are pinned in `infra/bin/flagship.ts`. The domain's DNS is at Cloudflare: a `flagship` CNAME to the CloudFront domain and the certificate's validation CNAME, both **DNS only** (proxied, CloudFront's per-IP limit would see Cloudflare's addresses). The certificate (ACM, us-east-1) and domain are set in `infra/cdk.json`.
 
 | Stack | Region | Contents |
 |---|---|---|
@@ -183,7 +183,7 @@ Guardrails are in `GUARDRAILS` (`infra/lib/flagship-stack.ts`) and pinned by `in
 - DynamoDB provisioned at 25 read / 25 write units, the always-free allowance and a hard ceiling.
 - Logs kept 7 days; no VPC, NAT, custom domain or Route 53.
 - CloudFront is on the free flat-rate plan (no overage charges). The plan's WAF web ACL, is managed outside the stack: a per-IP rate rule (600 requests per 5 minutes), AWS's IP reputation list and the known-bad-inputs rules block; the common rule set only counts, because its 8 KB body limit would refuse maximum-size config saves; the stack only keeps it attached (`webAclArn` in `infra/cdk.json`).
-- Kill switch: when actual monthly cost passes $1, it sets the API and live functions' concurrency to 0 and both API throttles to 0. Restore with `aws lambda invoke --region us-east-1 --function-name <KillSwitchFunction output> --cli-binary-format raw-in-base64-out --payload '{"action":"restore"}' out.json`.
+- Kill switch (`flagship-kill-switch`): when actual monthly cost passes $1, it sets the API and live functions' concurrency to 0 and both API throttles to 0; the web page stays up. `npm run demo:stop` does the same by hand and `npm run demo:restore` undoes either (both need `aws sso login --profile flagship`).
 
 Deploying by hand: `npm run build`, then from `infra/`: `npx cdk deploy --all --profile flagship -c alertEmail=<email>`. After the first deploy, invoke the `reset` function once to seed the table.
 

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CfnOutput, Duration, RemovalPolicy, Stack, TimeZone, type StackProps } from 'aws-cdk-lib';
+import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { CfnIntegration, CfnIntegrationResponse, CfnRoute, CfnRouteResponse, HttpApi, HttpStage, WebSocketApi, WebSocketStage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration, WebSocketLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -31,7 +32,10 @@ export const GUARDRAILS = {
 };
 
 /** Fixed names, so the kill switch (another region: Budgets exists only in us-east-1) can find them. */
-export const NAMES = { apiFunction: 'flagship-api', liveFunction: 'flagship-live', httpApi: 'flagship-http', liveApi: 'flagship-live', liveStage: 'live' };
+export const NAMES = {
+  apiFunction: 'flagship-api', liveFunction: 'flagship-live', httpApi: 'flagship-http', liveApi: 'flagship-live', liveStage: 'live',
+  killSwitch: 'flagship-kill-switch', // `npm run demo:stop` / `demo:restore` (infra/scripts/demo.mjs)
+};
 
 export interface FlagshipStackProps extends StackProps {
   /** Reserved concurrency per function; null where the account's quota leaves none to reserve. */
@@ -40,6 +44,8 @@ export interface FlagshipStackProps extends StackProps {
   webDist?: string;
   /** The WAF web ACL the CloudFront free flat-rate plan attached (per-IP rate limiting); kept so deploys don't detach it. */
   webAclArn?: string;
+  /** Custom domain, with its ACM certificate (us-east-1, DNS-validated at the domain's DNS provider). */
+  domain?: { name: string; certificateArn: string };
 }
 
 export class FlagshipStack extends Stack {
@@ -142,6 +148,10 @@ export class FlagshipStack extends Stack {
       // Required by the flat-rate plan, which has no per-region charges.
       priceClass: cloudfront.PriceClass.PRICE_CLASS_ALL,
       webAclId: props.webAclArn,
+      ...(props.domain && {
+        domainNames: [props.domain.name],
+        certificate: Certificate.fromCertificateArn(this, 'Certificate', props.domain.certificateArn),
+      }),
       defaultBehavior: {
         origin: S3BucketOrigin.withOriginAccessControl(bucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -167,7 +177,8 @@ export class FlagshipStack extends Stack {
       logGroup: new LogGroup(this, 'WebDeploymentLogs', { retention: GUARDRAILS.logRetention, removalPolicy: RemovalPolicy.DESTROY }),
     });
 
-    new CfnOutput(this, 'Url', { value: `https://${distribution.distributionDomainName}` });
+    new CfnOutput(this, 'Url', { value: `https://${props.domain?.name ?? distribution.distributionDomainName}` });
+    new CfnOutput(this, 'CloudFrontDomain', { value: distribution.distributionDomainName });
     new CfnOutput(this, 'ResetFunction', { value: resetFn.functionName });
   }
 }
