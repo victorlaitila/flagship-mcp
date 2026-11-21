@@ -41,7 +41,7 @@ async function call(name: string, args: Record<string, unknown> = {}, c = client
 }
 
 const api = async (path: string) => (await fetch(`${apiUrl}/api${path}`)).json();
-const auditCount = async () => (await api('/audit?limit=1000')).length;
+const auditCount = async () => (await api('/audit?limit=100')).length;
 const send = async (method: string, path: string, actor: string, json?: unknown) => (await fetch(`${apiUrl}/api${path}`, {
   method, headers: { 'content-type': 'application/json', 'x-actor-id': actor }, body: json === undefined ? undefined : JSON.stringify(json),
 })).json();

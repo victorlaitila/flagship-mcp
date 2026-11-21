@@ -31,7 +31,19 @@ export const LIMITS = {
   conditions: 10,
   values: 50,
   value: 100,
+  /** Whole config, as stored (UTF-8 bytes): one audit entry holds two, and lists hold every flag's three. */
+  configBytes: 4096,
+  segmentConditionsBytes: 2048,
+  /** Audit entries per request. */
+  auditEntries: 100,
 } as const;
+
+const KEY_MESSAGE = 'must be 2-64 chars: lowercase letters, digits and underscores, starting with a letter.';
+
+function checkBytes(value: unknown, max: number, path: string, what: string, issues: Issues): void {
+  const bytes = Buffer.byteLength(JSON.stringify(value));
+  if (bytes > max) issues.push({ path, message: `${what} is too large: at most ${max} bytes (currently ${bytes}).` });
+}
 
 type Issues = ValidationIssue[];
 
@@ -213,10 +225,9 @@ export function validateEnvironmentConfig(input: unknown, ctx: ConfigContext): V
   }
 
   if (issues.length > 0) return { value: null, issues };
-  return {
-    value: { enabled: input.enabled as boolean, defaultEnabled, rolloutPercentage, variantWeights, rules, prerequisites },
-    issues,
-  };
+  const value = { enabled: input.enabled as boolean, defaultEnabled, rolloutPercentage, variantWeights, rules, prerequisites };
+  checkBytes(value, LIMITS.configBytes, 'config', 'Configuration', issues);
+  return issues.length > 0 ? { value: null, issues } : { value, issues };
 }
 
 /** Returns the cycle path if adding `prerequisites` to `flagKey` would create one. */
@@ -265,7 +276,7 @@ export function validateCreateFlag(input: unknown, existingKeys: Set<string>): V
   if (!isRecord(input)) return { value: null, issues: [{ path: '', message: 'Body must be an object.' }] };
   const key = typeof input.key === 'string' ? input.key.trim() : '';
   if (!KEY_PATTERN.test(key)) {
-    issues.push({ path: 'key', message: 'Key must be 2–64 chars: lowercase letters, digits and underscores, starting with a letter.' });
+    issues.push({ path: 'key', message: `Key ${KEY_MESSAGE}` });
   } else if (existingKeys.has(key)) issues.push({ path: 'key', message: `A flag with key "${key}" already exists.` });
   if (!nonEmpty(input.name)) issues.push({ path: 'name', message: 'Name is required.' });
   if (!nonEmpty(input.owner)) issues.push({ path: 'owner', message: 'Owner is required.' });
@@ -284,7 +295,7 @@ export function validateCreateFlag(input: unknown, existingKeys: Set<string>): V
       variants = input.variants.map((raw, i) => {
         const v = isRecord(raw) ? raw : {};
         const vKey = typeof v.key === 'string' ? v.key.trim() : '';
-        if (!KEY_PATTERN.test(vKey)) issues.push({ path: `variants[${i}].key`, message: 'Variant key must be lowercase letters, digits and underscores.' });
+        if (!KEY_PATTERN.test(vKey)) issues.push({ path: `variants[${i}].key`, message: `Variant key "${vKey}" ${KEY_MESSAGE}` });
         else if (seen.has(vKey)) issues.push({ path: `variants[${i}].key`, message: `Duplicate variant "${vKey}".` });
         seen.add(vKey);
         if (!nonEmpty(v.name)) issues.push({ path: `variants[${i}].name`, message: 'Variant name is required.' });
@@ -343,13 +354,14 @@ export function validateSegment(
   if (!isRecord(input)) return { value: null, issues: [{ path: '', message: 'Body must be an object.' }] };
   const key = currentKey ?? (typeof input.key === 'string' ? input.key.trim() : '');
   if (currentKey === null) {
-    if (!KEY_PATTERN.test(key)) issues.push({ path: 'key', message: 'Key must be lowercase letters, digits and underscores.' });
+    if (!KEY_PATTERN.test(key)) issues.push({ path: 'key', message: `Key ${KEY_MESSAGE}` });
     else if (existingKeys.has(key)) issues.push({ path: 'key', message: `A segment with key "${key}" already exists.` });
   }
   if (!nonEmpty(input.name)) issues.push({ path: 'name', message: 'Name is required.' });
   else checkLength(input.name.trim(), LIMITS.name, 'name', issues);
   if (typeof input.description === 'string') checkLength(input.description.trim(), LIMITS.description, 'description', issues);
   const conditions = validateConditions(input.conditions, 'conditions', issues, new Set(), false);
+  checkBytes(conditions, LIMITS.segmentConditionsBytes, 'conditions', 'Conditions', issues);
   if (issues.length > 0) return { value: null, issues };
   return {
     value: {

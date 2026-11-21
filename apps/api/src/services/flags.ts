@@ -17,7 +17,7 @@ import { DEMO_USERS } from '../demo.js';
 import { AppError, invalid, notFound } from '../errors.js';
 import { evaluateFlag } from '../evaluation/engine.js';
 import { LIMITS, validateCreateFlag, validateEnvironmentConfig, validateUpdateFlag } from '../validation/validators.js';
-import { assertCanManageEnvironment, assertCanManageGlobal, assertProductionConfirmed, assertProductionWritable, type ServiceContext } from './context.js';
+import { assertCanManageEnvironment, assertCanManageGlobal, assertProductionConfirmed, assertProductionWritable, publishChange, type ServiceContext } from './context.js';
 import { loadSnapshot } from './evaluation.js';
 
 export function listFlags(ctx: ServiceContext): Promise<FlagWithConfigs[]> {
@@ -69,7 +69,7 @@ export async function createFlag(ctx: ServiceContext, actor: Actor, input: unkno
     ],
     { timestamp, actor, operation: 'flag.created', flagKey: flag.key, previous: null, next: flag },
   );
-  ctx.notifier.publish({ entity: 'flag', flagKey: flag.key, auditId });
+  await publishChange(ctx, { entity: 'flag', flagKey: flag.key, auditId });
   return getFlag(ctx, flag.key);
 }
 
@@ -82,7 +82,7 @@ export async function updateFlag(ctx: ServiceContext, actor: Actor, key: string,
   const next: Flag = { ...flag, ...value, updatedAt: ctx.now().toISOString() };
   const auditId = await ctx.store.commit([{ type: 'putFlag', flag: next }],
     { timestamp: next.updatedAt, actor, operation: 'flag.updated', flagKey: key, previous: flag, next });
-  ctx.notifier.publish({ entity: 'flag', flagKey: key, auditId });
+  await publishChange(ctx, { entity: 'flag', flagKey: key, auditId });
   return getFlag(ctx, key);
 }
 
@@ -125,7 +125,7 @@ export async function setFlagStatus(
     timestamp: next.updatedAt, actor, operation: status === 'archived' ? 'flag.archived' : 'flag.restored',
     flagKey: key, previous: flag, next,
   });
-  ctx.notifier.publish({ entity: 'flag', flagKey: key, auditId });
+  await publishChange(ctx, { entity: 'flag', flagKey: key, auditId });
   return getFlag(ctx, key);
 }
 
@@ -180,10 +180,10 @@ export async function applyConfig(
 
   const timestamp = ctx.now().toISOString();
   const auditId = await ctx.store.commit(
-    [{ type: 'putConfig', flag, environment, config: value, timestamp }, { type: 'putFlag', flag: { ...flag, updatedAt: timestamp } }],
+    [{ type: 'putConfig', flag, environment, config: value, timestamp }],
     { timestamp, actor, operation, flagKey, environment, previous, next: value, rollbackOf },
   );
-  ctx.notifier.publish({ entity: 'config', flagKey, environment, auditId });
+  await publishChange(ctx, { entity: 'config', flagKey, environment, auditId });
   return { config: value, auditId };
 }
 

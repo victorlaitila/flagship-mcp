@@ -25,7 +25,7 @@ These prevent real bugs; don't break them without an explicit decision (and a ne
 - Permissions and Production confirmation are enforced in the backend; the UI only mirrors them.
 - Anything that can change Production evaluation calls `assertProductionWritable` before Production confirmation: Production config writes and rollbacks, archiving or restoring a flag enabled in Production, editing a segment used by Production rules. A new write path that can reach Production needs it too.
 - The app is being prepared for a public deployment: treat every endpoint as reachable by anyone, with any input. Guardrail settings fail closed: an invalid value stops startup instead of switching the guardrail off.
-- Live updates: change events are invalidation signals and clients refetch. Keep the SSE heartbeat (`SSE_HEARTBEAT_MS`), the client watchdog (`STALE_AFTER_MS` in `apps/web/src/hooks/useLive.ts`) and the Vite proxy's stream-closing fix together; removing one brings back silently dead live updates.
+- Live updates (WebSocket at `/api/live`): change events are invalidation signals and clients refetch. The client's ping (`PING_INTERVAL_MS`), the server's pong (`apps/api/src/live.ts`) and the client's pong deadline (`PONG_TIMEOUT_MS` in `apps/web/src/hooks/useLive.ts`, timed from each ping so hidden tabs stay connected) belong together; removing one brings back silently dead live updates. Services publish changes with `publishChange`, after the commit; it never fails the request.
 - React effects return only `undefined` or a cleanup function, and clean up subscriptions and listeners.
 
 ## Verifying changes

@@ -12,12 +12,13 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 | [6](#6-append-only-audit-log-rollback-restores-a-full-snapshot) | Append-only audit log; rollback restores a full snapshot | Accepted |
 | [7](#7-optimistic-concurrency-for-every-write) | Optimistic concurrency for every write | Accepted |
 | [8](#8-the-backend-normalizes-previews-show-the-normalized-result) | The backend normalizes; previews show the normalized result | Accepted |
-| [9](#9-live-updates-via-sse-events-trigger-refetches) | Live updates via SSE; events trigger refetches | Accepted |
+| [9](#9-live-updates-via-sse-events-trigger-refetches) | Live updates via SSE; events trigger refetches | Superseded by #15 |
 | [10](#10-the-mcp-server-is-a-plain-api-client-with-plan-then-apply-and-read-only-production) | The MCP server is a plain API client, with plan-then-apply and read-only Production | Accepted |
 | [11](#11-storefront-state-stays-in-the-browser) | Storefront state stays in the browser | Accepted |
 | [12](#12-tests-run-against-the-real-backend) | Tests run against the real backend | Accepted |
 | [13](#13-storage-behind-an-async-store-interface-with-one-commit-per-change) | Storage behind an async `Store` interface, with one commit per change | Accepted |
 | [14](#14-guardrails-for-a-public-deployment-read-only-production-and-size-limits) | Guardrails for a public deployment: read-only Production and size limits | Accepted |
+| [15](#15-live-updates-over-websocket-with-client-side-pings) | Live updates over WebSocket, with client-side pings | Accepted |
 
 ---
 
@@ -129,6 +130,8 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 
 ### 9. Live updates via SSE; events trigger refetches
 
+**Superseded by [15](#15-live-updates-over-websocket-with-client-side-pings).**
+
 **Context.** A change made anywhere (dashboard, API, MCP) must show up in open dashboards and storefronts without a reload.
 
 **Decision.**
@@ -212,3 +215,16 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 - *Rely on throttling and nightly resets alone.* Rejected: throttling caps the request rate, not what one request stores, and a reset leaves the damage visible until it runs.
 
 **Consequences.** Visitors can try everything in Development and Staging, while Production stays as seeded. New write paths that can reach Production must call `assertProductionWritable` (recorded in `CLAUDE.md`). The limits also apply locally; the seed stays well inside them (tested).
+
+### 15. Live updates over WebSocket, with client-side pings
+
+**Context.** Decision 9's SSE needs a long-lived HTTP response from the process that commits the change. On AWS, Lambda behind API Gateway can't hold a stream open, and each invocation has its own memory.
+
+**Decision.** Live updates use a WebSocket at `/api/live` (`ws` in `apps/api/src/live.ts` locally; an API Gateway WebSocket API on AWS). Events stay invalidation signals, and the client keeps decision 9's shared connection, backoff and reload-after-reconnect (`apps/web/src/hooks/useLive.ts`). The client pings every 20 s and treats a ping with no message back within 10 s as a dead connection; the server only answers pings. Services await `ChangePublisher.publish` (`events.ts`) through `publishChange` after the commit, so a Lambda can finish sending before it returns, and a failed delivery never fails the request.
+
+**Alternatives considered.**
+- *Keep SSE.* Rejected: it can't work on Lambda without an always-on server, which costs dollars rather than cents.
+- *Polling.* Rejected: up to the poll interval of delay, and faster polling costs more.
+- *Long polling.* Rejected: Lambda bills the time spent waiting.
+
+**Consequences.** One transport locally and on AWS, so the tests exercise what runs in production. Pings, not server heartbeats, detect dead connections, because API Gateway can't push on a timer; detection takes up to 30 s instead of 15 s. Timing the deadline from the ping, not from the last message, keeps hidden tabs connected even though browsers fire their repeating timers only once a minute. The pings also keep connections under API Gateway's 10-minute idle timeout. The AWS publisher must store connection ids, send to each, drop dead ones and cap the number of connections.

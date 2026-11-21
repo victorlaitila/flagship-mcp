@@ -2,14 +2,13 @@ import type { ChangeEvent, EnvironmentConfig, Segment } from '@flagship/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AppError } from '../src/errors.js';
 import { listAudit, rollback } from '../src/services/audit.js';
-import type { ServiceContext } from '../src/services/context.js';
 import { evaluateOne } from '../src/services/evaluation.js';
 import { applyConfig, compareEnvironments, createFlag, getFlag, previewConfig, setFlagStatus } from '../src/services/flags.js';
 import { createSegment, deleteSegment, listSegments, updateSegment } from '../src/services/segments.js';
 import { LIMITS } from '../src/validation/validators.js';
 import { admin, developer, releaseManager, seededContext } from './helpers.js';
 
-let ctx: ServiceContext;
+let ctx: Awaited<ReturnType<typeof seededContext>>;
 beforeEach(async () => {
   ctx = await seededContext();
 });
@@ -184,6 +183,18 @@ describe('flags and segments', () => {
   });
 });
 
+describe('stored flag row', () => {
+  it('a config save only touches the flag\'s modified time, never its other fields', async () => {
+    const stale = (await ctx.store.getFlag('new_search'))!;
+    await ctx.store.commit([{ type: 'putFlag', flag: { ...stale, name: 'Renamed elsewhere', status: 'archived' } }],
+      { timestamp: '2026-10-31T12:00:00Z', actor: admin, operation: 'flag.updated', flagKey: 'new_search', previous: null, next: null });
+    // A save that started before the rename still holds the old flag object.
+    await ctx.store.commit([{ type: 'putConfig', flag: stale, environment: 'development', config: await config('new_search', 'development'), timestamp: '2026-11-01T00:00:00Z' }],
+      { timestamp: '2026-11-01T00:00:00Z', actor: admin, operation: 'config.updated', flagKey: 'new_search', environment: 'development', previous: null, next: null });
+    expect(await ctx.store.getFlag('new_search')).toMatchObject({ name: 'Renamed elsewhere', status: 'archived', updatedAt: '2026-11-01T00:00:00Z' });
+  });
+});
+
 describe('atomicity', () => {
   it('rolls back every write in a failed commit', async () => {
     const flag = (await ctx.store.getFlag('loyalty_program'))!;
@@ -209,9 +220,16 @@ describe('atomicity', () => {
     expect(events).toEqual([]);
   });
 
+  it('keeps a committed change successful even if publishing it fails', async () => {
+    ctx.notifier.publish = () => Promise.reject(new Error('live delivery down'));
+    const current = await config('ai_recommendations', 'development');
+    expect((await applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 41 }, false)).config.rolloutPercentage).toBe(41);
+    expect((await config('ai_recommendations', 'development')).rolloutPercentage).toBe(41);
+  });
+
   it('keeps a committed change successful even if a listener throws', async () => {
     ctx.notifier.subscribe(() => {
-      throw new Error('broken SSE client');
+      throw new Error('broken live client');
     });
     const current = await config('ai_recommendations', 'development');
     expect((await applyConfig(ctx, developer, 'ai_recommendations', 'development', { ...current, rolloutPercentage: 40 }, false)).config.rolloutPercentage).toBe(40);
@@ -236,6 +254,20 @@ describe('production read-only', () => {
     const staging = await config('loyalty_program', 'staging');
     await applyConfig(ctx, admin, 'loyalty_program', 'staging', { ...staging, enabled: false }, false);
     expect((await config('loyalty_program', 'staging')).enabled).toBe(false);
+  });
+
+  it('refuses before asking for confirmation, so an unconfirmed attempt is told why', async () => {
+    const before = await config('loyalty_program', 'production');
+    expect(await errorCode(applyConfig(ctx, admin, 'loyalty_program', 'production', { ...before, enabled: false }, false))).toBe('FORBIDDEN');
+    expect(await errorCode(setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived'))).toBe('FORBIDDEN');
+  });
+
+  it('refuses restoring a flag enabled in Production', async () => {
+    ctx = await seededContext();
+    await setFlagStatus(ctx, admin, 'free_shipping_banner', 'archived', true);
+    ctx.productionReadOnly = true;
+    expect(await errorCode(setFlagStatus(ctx, admin, 'free_shipping_banner', 'active', true))).toBe('FORBIDDEN');
+    expect((await getFlag(ctx, 'free_shipping_banner')).status).toBe('archived');
   });
 
   it('refuses archiving or restoring a flag enabled in Production, but not one disabled there', async () => {

@@ -4,6 +4,7 @@ import { openDatabase } from './database/db.js';
 import { isSeeded, seed } from './database/seed.js';
 import { SqliteStore } from './database/sqlite-store.js';
 import { ChangeNotifier } from './events.js';
+import { attachLiveUpdates } from './live.js';
 
 const db = openDatabase(DATABASE_PATH);
 const store = new SqliteStore(db);
@@ -12,5 +13,7 @@ if (!isSeeded(db)) {
   console.log('Seeded new database.');
 }
 
-const app = createApp({ store, notifier: new ChangeNotifier(), now: () => new Date(), productionReadOnly: PRODUCTION_READ_ONLY });
-app.listen(PORT, 'localhost', () => console.log(`Flagship API listening on http://localhost:${PORT} (db: ${DATABASE_PATH}${PRODUCTION_READ_ONLY ? ', Production read-only' : ''})`));
+const notifier = new ChangeNotifier();
+const app = createApp({ store, notifier, now: () => new Date(), productionReadOnly: PRODUCTION_READ_ONLY });
+const server = app.listen(PORT, 'localhost', () => console.log(`Flagship API listening on http://localhost:${PORT} (db: ${DATABASE_PATH}${PRODUCTION_READ_ONLY ? ', Production read-only' : ''})`));
+attachLiveUpdates(server, notifier);

@@ -1,6 +1,7 @@
 import type { Actor } from '@flagship/shared';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, setActorId } from '../lib/api';
+import { subscribeToChanges } from './useLive';
 
 const STORAGE_KEY = 'flagship.actor';
 const read = () => {
@@ -28,8 +29,15 @@ export function ActorProvider({ children }: { children: ReactNode }) {
   const [productionReadOnly, setProductionReadOnly] = useState(false);
 
   useEffect(() => {
-    api.actors().then(setActors, () => setActors([]));
-    api.settings().then((s) => setProductionReadOnly(s.productionReadOnly), () => {});
+    const load = () => {
+      api.actors().then(setActors, () => setActors([]));
+      api.settings().then((s) => setProductionReadOnly(s.productionReadOnly), () => {});
+    };
+    load();
+    // Reload after a reconnect too: if the API was down when the page opened, both requests failed.
+    return subscribeToChanges((event) => {
+      if (event === null) load();
+    });
   }, []);
 
   const actor = actors.find((a) => a.id === actorId) ?? actors.at(-1) ?? null;

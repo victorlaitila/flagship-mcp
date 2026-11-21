@@ -131,8 +131,8 @@ A save can never silently overwrite someone else's change, whether it came from 
 
 Stop `npm run dev` while the store and dashboard are open:
 
-- The store's indicator changes to *Reconnecting… · last known flags*.
-- The dashboard shows a "Live updates interrupted" notice. The pages keep showing the last known data.
+- The store's indicator changes to *Reconnecting… · last known flags*, and after a few failed attempts to *Live updates offline · last known flags*. If the store has to load something new meanwhile (e.g. you switch customer), it shows that the shop is unavailable.
+- The dashboard shows a "Live updates interrupted" notice, later "Live updates are offline; still retrying." The pages keep showing the last known data.
 
 Start it again. Both pages reconnect by themselves, reload what they show, and the indicator turns green again. Anything changed in the meantime is picked up. (To stop only the API, run the API and web app in separate terminals with `npm run dev -w @flagship/api` and `npm run dev -w @flagship/web`.)
 

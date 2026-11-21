@@ -1,4 +1,4 @@
-import type { ApiErrorBody, ChangeEvent, ServerSettings } from '@flagship/shared';
+import type { ApiErrorBody, ServerSettings } from '@flagship/shared';
 import express, { type ErrorRequestHandler } from 'express';
 import { ACTORS, DEMO_USERS } from './demo.js';
 import { AppError } from './errors.js';
@@ -11,14 +11,13 @@ import { requireActor } from './routes/actor.js';
 import { parseEnvironment } from './services/evaluation.js';
 import { compareEnvironments } from './services/flags.js';
 
-/** Keep in sync with the web client's watchdog (`STALE_AFTER_MS` in apps/web/src/hooks/useLive.ts). */
-export const SSE_HEARTBEAT_MS = 5000;
-
 export function createApp(ctx: ServiceContext): express.Express {
   const app = express();
   app.disable('x-powered-by');
   // Generous for any real config (a few KB) while keeping abusive payloads out.
   app.use(express.json({ limit: '64kb' }));
+  // Deeply nested input could overflow the stack in validation or messages; real bodies nest about 6 levels.
+  app.use((req, _res, next) => next(nestedDeeperThan(req.body, 16) ? new AppError('BAD_REQUEST', 'Request body is nested too deeply.') : undefined));
 
   app.get('/api/health', (_req, res) => void res.json({ ok: true }));
   app.get('/api/actors', (_req, res) => void res.json(ACTORS));
@@ -38,19 +37,6 @@ export function createApp(ctx: ServiceContext): express.Express {
   app.use('/api/audit', auditRoutes(ctx));
   app.use('/api/evaluate', evaluationRoutes(ctx));
 
-  app.get('/api/events', (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    res.write('retry: 2000\n\n');
-    const send = (event: ChangeEvent) => res.write(`event: change\ndata: ${JSON.stringify(event)}\n\n`);
-    const unsubscribe = ctx.notifier.subscribe(send);
-    // A named event (unlike an SSE comment) reaches client code, which uses it to detect a dead stream.
-    const heartbeat = setInterval(() => res.write('event: heartbeat\ndata: {}\n\n'), SSE_HEARTBEAT_MS);
-    req.on('close', () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-    });
-  });
-
   app.use('/api', (_req, _res, next) => next(new AppError('NOT_FOUND', 'Endpoint not found.')));
 
   const onError: ErrorRequestHandler = (error, _req, res, _next) => {
@@ -64,9 +50,25 @@ export function createApp(ctx: ServiceContext): express.Express {
     if (error?.type === 'entity.too.large') {
       return void res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is larger than 64 KB.' } } satisfies ApiErrorBody);
     }
+    // Other client errors raised by Express or body-parser (bad encoding, broken gzip, undecodable URL).
+    if (Number.isInteger(error?.status) && error.status >= 400 && error.status < 500) {
+      return void res.status(error.status).json({ error: { code: 'BAD_REQUEST', message: 'Malformed request.' } } satisfies ApiErrorBody);
+    }
     console.error(error);
     res.status(500).json({ error: { code: 'INTERNAL', message: 'Unexpected server error.' } } satisfies ApiErrorBody);
   };
   app.use(onError);
   return app;
+}
+
+/** Iterative, so that checking the depth can't overflow the stack itself. */
+function nestedDeeperThan(value: unknown, max: number): boolean {
+  const stack: [unknown, number][] = [[value, 0]];
+  while (stack.length > 0) {
+    const [v, depth] = stack.pop()!;
+    if (typeof v !== 'object' || v === null) continue;
+    if (depth >= max) return true;
+    for (const child of Object.values(v)) stack.push([child, depth + 1]);
+  }
+  return false;
 }

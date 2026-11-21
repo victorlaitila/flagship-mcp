@@ -77,7 +77,7 @@ export function OverviewPage() {
         {ENVIRONMENTS.map((env) => <EnvironmentCard key={env} env={env} flags={active} />)}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel title="Recent configuration changes" bodyClassName="" actions={<Link to="/audit" className="text-xs text-accent hover:underline">View all</Link>}>
           {audit.error ? <div className="p-4"><ErrorState error={audit.error} /></div>
             : !audit.data ? <Loading />

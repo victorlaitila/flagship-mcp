@@ -95,7 +95,7 @@ function FlagHeader({ flag }: { flag: FlagWithConfigs }) {
             <span>Owner <span className="text-fg">{flag.owner}</span></span>
             <span>Created {relativeTime(flag.createdAt)}</span>
             <span>Modified {relativeTime(flag.updatedAt)}</span>
-            <span className="flex gap-1">{flag.tags.map((t) => <Badge key={t}>{t}</Badge>)}</span>
+            <span className="flex flex-wrap gap-1">{flag.tags.map((t) => <Badge key={t}>{t}</Badge>)}</span>
           </div>
         </div>
         <div className="flex gap-2">
@@ -194,7 +194,7 @@ export function FlagDetailPage() {
               setParams({ env }, { replace: true });
             }}
             className={cx(
-              '-mb-px flex items-center gap-3 border-b-2 px-3 py-2 transition-colors',
+              '-mb-px flex shrink-0 items-center gap-3 whitespace-nowrap border-b-2 px-3 py-2 transition-colors',
               env === environment ? 'border-accent' : 'border-transparent opacity-70 hover:opacity-100',
             )}
           >

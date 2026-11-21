@@ -70,7 +70,7 @@ export function listAuditEntries(db: Db, filter: AuditFilter = {}): AuditEntry[]
   if (filter.actorId) (where.push('actor_id = ?'), params.push(filter.actorId));
   if (filter.environment) (where.push('environment = ?'), params.push(filter.environment));
   if (filter.operation) (where.push('operation = ?'), params.push(filter.operation));
-  params.push(filter.limit ?? 200);
+  params.push(filter.limit ?? 100);
   const sql = `SELECT * FROM audit_log ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`;
   return (db.prepare(sql).all(...params) as unknown as AuditRow[]).map(toEntry);
 }

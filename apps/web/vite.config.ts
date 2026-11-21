@@ -4,19 +4,10 @@ import { defineConfig, type ProxyOptions } from 'vite';
 
 const api = process.env.API_URL ?? 'http://localhost:4000';
 
-// When the API goes away, end the browser's side of a proxied response too. Otherwise an open
-// live-update stream (/api/events) silently hangs instead of failing and reconnecting.
+// `ws: true` also proxies the live-update WebSocket (/api/live). A dead connection is detected by the
+// client's ping/pong watchdog (STALE_AFTER_MS in src/hooks/useLive.ts), so the proxy needs nothing else.
 const proxy: Record<string, ProxyOptions> = {
-  '/api': {
-    target: api,
-    configure: (server) => {
-      server.on('proxyRes', (proxyRes, _req, res) => {
-        proxyRes.on('close', () => {
-          if (!res.writableEnded) res.destroy();
-        });
-      });
-    },
-  },
+  '/api': { target: api, ws: true },
 };
 
 export default defineConfig({

@@ -37,7 +37,10 @@
 
 @layer base {
   html { color-scheme: dark; }
-  body { @apply bg-canvas text-fg font-sans antialiased; }
+  /* Keys, names and owners can be long unbroken strings (up to 64–80 characters); let them wrap anywhere rather than widen pages.
+     Table columns size to their narrowest content, so cells keep whole words and opt in with `wrap-anywhere` for user text. */
+  body { @apply bg-canvas text-fg font-sans antialiased wrap-anywhere; }
+  th, td { @apply wrap-break-word; }
   ::selection { background: color-mix(in oklab, var(--color-accent) 35%, transparent); }
 }
 

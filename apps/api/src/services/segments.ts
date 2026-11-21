@@ -4,7 +4,7 @@ import { DEMO_USERS } from '../demo.js';
 import { AppError, invalid, notFound } from '../errors.js';
 import { userInSegment } from '../evaluation/engine.js';
 import { LIMITS, validateSegment } from '../validation/validators.js';
-import { assertCanManageGlobal, assertProductionWritable, type ServiceContext } from './context.js';
+import { assertCanManageGlobal, assertProductionWritable, publishChange, type ServiceContext } from './context.js';
 
 function findReferences(flags: FlagWithConfigs[], segmentKey: string): SegmentReference[] {
   return flags.flatMap((flag) =>
@@ -50,7 +50,7 @@ export async function createSegment(ctx: ServiceContext, actor: Actor, input: un
   const segment: Segment = { id: randomUUID(), ...value, createdAt: timestamp, updatedAt: timestamp };
   const auditId = await ctx.store.commit([{ type: 'putSegment', segment }],
     { timestamp, actor, operation: 'segment.created', segmentKey: segment.key, previous: null, next: segment });
-  ctx.notifier.publish({ entity: 'segment', segmentKey: segment.key, auditId });
+  await publishChange(ctx, { entity: 'segment', segmentKey: segment.key, auditId });
   return withUsage(segment, await ctx.store.listFlagsWithConfigs());
 }
 
@@ -65,7 +65,7 @@ export async function updateSegment(ctx: ServiceContext, actor: Actor, key: stri
   const next: Segment = { ...previous, ...value, key, updatedAt: ctx.now().toISOString() };
   const auditId = await ctx.store.commit([{ type: 'putSegment', segment: next }],
     { timestamp: next.updatedAt, actor, operation: 'segment.updated', segmentKey: key, previous, next });
-  ctx.notifier.publish({ entity: 'segment', segmentKey: key, auditId });
+  await publishChange(ctx, { entity: 'segment', segmentKey: key, auditId });
   return withUsage(next, flags);
 }
 
@@ -79,5 +79,5 @@ export async function deleteSegment(ctx: ServiceContext, actor: Actor, key: stri
   }
   const auditId = await ctx.store.commit([{ type: 'deleteSegment', segment }],
     { timestamp: ctx.now().toISOString(), actor, operation: 'segment.deleted', segmentKey: key, previous: segment, next: null });
-  ctx.notifier.publish({ entity: 'segment', segmentKey: key, auditId });
+  await publishChange(ctx, { entity: 'segment', segmentKey: key, auditId });
 }

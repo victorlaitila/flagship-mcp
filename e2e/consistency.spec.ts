@@ -17,8 +17,8 @@ async function putAudited(request: APIRequestContext, flagKey: string, env: Envi
   return Number(res.headers()['x-audit-id']);
 }
 
-/** Cuts the page's live-update stream so it can't learn about a change before acting (the 409 path). */
-const blockLiveUpdates = (page: Page) => page.route('**/api/events', (route) => route.abort());
+/** Refuses the page's live-update connection so it can't learn about a change before acting (the 409 path). */
+const blockLiveUpdates = (page: Page) => page.routeWebSocket('**/api/live', (ws) => ws.close());
 
 const rollout = (page: Page) => page.getByLabel('Rollout percentage value');
 const conflictBanner = (page: Page) => page.getByText(/changed elsewhere since you started editing/);
@@ -243,7 +243,8 @@ test.describe('live updates after an API restart', () => {
     await expect(dashboard.getByRole('status')).toContainText('Live updates');
 
     // The API comes back and a change happens while the pages are still disconnected, so its event is missed.
-    for (const page of [store, dashboard]) await page.route('**/api/events', (route) => route.fulfill({ status: 503, body: '' }));
+    let blocked = true; // while set, reconnect attempts are refused, as if the API weren't back yet
+    for (const page of [store, dashboard]) await page.routeWebSocket('**/api/live', (ws) => (blocked ? ws.close() : ws.connectToServer()));
     await stack.startApi();
     const path = `${stack.apiUrl}/api/flags/free_shipping_banner/environments/production`;
     const config = await (await fetch(path)).json();
@@ -257,13 +258,28 @@ test.describe('live updates after an API restart', () => {
     await expect(freeShippingBanner(store)).toBeVisible(); // missed, and...
     await expect(store.getByText('Live flags')).toHaveCount(0); // ...not presented as live
 
-    for (const page of [store, dashboard]) await page.unroute('**/api/events');
+    blocked = false;
     await expect(store.getByText('Live flags')).toBeVisible({ timeout: 40_000 });
     await expect(freeShippingBanner(store)).toHaveCount(0);
     await expect(enabled).not.toBeChecked({ timeout: 40_000 });
     await expect(dashboard.getByRole('status')).toHaveCount(0);
     await expectNotReloaded(store);
     await expectNotReloaded(dashboard);
+    await context.close();
+  });
+
+  test('a dashboard opened while the API is down recovers its identities once it is back', async ({ browser }) => {
+    test.setTimeout(120_000);
+    const context = await browser.newContext({ baseURL: stack.webUrl });
+    const dashboard = await context.newPage();
+    await stack.stopApi();
+    await dashboard.goto('/flags/loyalty_program');
+    await expect(dashboard.getByRole('status')).toContainText('Live updates');
+    await expect(dashboard.getByText('Acting as')).toHaveCount(0);
+
+    await stack.startApi();
+    await expect(dashboard.getByText('Acting as')).toBeVisible({ timeout: 40_000 });
+    await expect(dashboard.getByText(/Your role cannot change/)).toHaveCount(0);
     await context.close();
   });
 });

@@ -102,14 +102,11 @@ describe('size limits', () => {
   const rule = (i: number, extra = {}) => ({ id: `r${i}`, effect: 'include', conditions: [cond(['FI'])], ...extra });
 
   it('accepts values exactly at each limit', () => {
-    const atLimit = {
-      ...base,
-      rules: Array.from({ length: LIMITS.rules }, (_, i) => rule(i, {
-        description: long(LIMITS.name),
-        conditions: Array.from({ length: LIMITS.conditions }, () => cond(Array.from({ length: LIMITS.values }, (_, j) => `${j}${long(LIMITS.value - 3)}`))),
-      })),
-    };
-    expect(validateEnvironmentConfig(atLimit, ctx(pct)).issues).toEqual([]);
+    const ok = (config: unknown) => expect(validateEnvironmentConfig(config, ctx(pct)).issues).toEqual([]);
+    ok({ ...base, rules: Array.from({ length: LIMITS.rules }, (_, i) => rule(i)) });
+    ok({ ...base, rules: [rule(0, { id: long(LIMITS.ruleId), description: long(LIMITS.name) })] });
+    ok({ ...base, rules: [rule(0, { conditions: Array.from({ length: LIMITS.conditions }, () => cond(['FI'])) })] });
+    ok({ ...base, rules: [rule(0, { conditions: [cond([...Array.from({ length: LIMITS.values - 1 }, (_, i) => `v${i}`), long(LIMITS.value)])] })] });
     expect(validateUpdateFlag({
       name: long(LIMITS.name), owner: long(LIMITS.owner), description: long(LIMITS.description),
       tags: Array.from({ length: LIMITS.tags }, (_, i) => `${i}${long(LIMITS.tag - 2)}`),
@@ -145,6 +142,22 @@ describe('size limits', () => {
     expect(paths(validateSegment({ ...segment, description: long(LIMITS.description + 1) }, new Set(), null))).toEqual(['description']);
     expect(paths(validateSegment({ ...segment, conditions: Array.from({ length: LIMITS.conditions + 1 }, () => cond(['FI'])) }, new Set(), null)))
       .toEqual(['conditions']);
+  });
+
+  it('caps the total size of a config and of a segment\'s conditions', () => {
+    // Each field is within its own limit, but together they are too large to store.
+    const values = Array.from({ length: LIMITS.values }, (_, i) => `${i}${long(LIMITS.value - 3)}`);
+    const big = { ...base, rules: [rule(0, { conditions: [cond(values)] })] };
+    expect(validateEnvironmentConfig(big, ctx(pct)).issues).toEqual([
+      { path: 'config', message: expect.stringMatching(/at most 4096 bytes/) },
+    ]);
+    const segment = { key: 'seg', name: 'n', conditions: [cond(values)] };
+    expect(paths(validateSegment(segment, new Set(), null))).toEqual(['conditions']);
+  });
+
+  it('explains what a valid variant key looks like', () => {
+    const r = validateCreateFlag({ key: 'k_ok', name: 'n', owner: 'o', type: 'multivariate', variants: [{ key: 'a', name: 'A' }, { key: 'bb', name: 'B' }] }, new Set());
+    expect(r.issues[0]).toMatchObject({ path: 'variants[0].key', message: expect.stringContaining('2–64 chars') });
   });
 
   it('keeps the seeded data within every limit', async () => {

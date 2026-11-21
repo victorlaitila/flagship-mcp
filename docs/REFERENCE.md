@@ -79,7 +79,7 @@ Rules enforced by the API:
 
 ## Limits
 
-Set in `LIMITS` (`apps/api/src/validation/validators.ts`) so no single write can bloat what every client downloads ([decision 14](DECISIONS.md#14-guardrails-for-a-public-deployment-read-only-production-and-size-limits)). Exceeding a field or list limit is a validation error (422) on that path; exceeding a count is 409.
+Set in `LIMITS` (`apps/api/src/validation/validators.ts`) so no single write can bloat what every client downloads ([decision 14](DECISIONS.md#14-guardrails-for-a-public-deployment-read-only-production-and-size-limits)). Exceeding a field, list or size limit is a validation error (422) on that path; exceeding a count is 409. Request bodies are capped at 64 KB (413) and at 16 levels of nesting (400).
 
 | What | Limit |
 |---|---|
@@ -91,6 +91,8 @@ Set in `LIMITS` (`apps/api/src/validation/validators.ts`) so no single write can
 | Variants | 10 |
 | Rules per config / conditions per rule or segment | 20 / 10 |
 | Values per condition | 50, each up to 100 characters |
+| Whole config / a segment's conditions, as stored | 4096 / 2048 bytes |
+| Audit entries per request (`limit`) | 100 (also the default) |
 
 ## REST API
 
@@ -114,16 +116,16 @@ JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "d
 | POST | `/api/audit/:id/rollback` | `{ expectedConfig?, confirmProduction? }`, `X-Audit-Id` as above |
 | GET | `/api/actors`, `/api/demo-users`, `/api/whoami` | Dashboard identities, storefront customers, the caller's identity |
 | GET | `/api/settings` | `{ productionReadOnly }` |
-| GET | `/api/events` | Server-sent events (described below) |
+| GET (WebSocket) | `/api/live` | Live updates (described below) |
 
-### Live updates (`/api/events`)
+### Live updates (`/api/live`, WebSocket)
 
-- **Events:** after every committed change the API sends `event: change` with `{ entity, flagKey?, segmentKey?, environment?, auditId }`, and `event: heartbeat` every 5 s.
-- **Client behaviour** (`apps/web/src/hooks/useLive.ts`): one shared connection per tab.
+- **Messages:** after every committed change the API sends `{ "type": "change", "event": { entity, flagKey?, segmentKey?, environment?, auditId } }`. The client sends `{"type":"ping"}` every 20 s and the API answers `{ "type": "pong" }`. Incoming messages over 1 KB close the connection (1009).
+- **Client behaviour** (`apps/web/src/hooks/useLive.ts`): one shared connection per tab, `wss://` on HTTPS pages.
   - On a change event, the pages reload what they display.
-  - On an error, or after 15 s without any event, the client reconnects with backoff from 1 s, doubling up to 30 s, then reloads everything it shows.
+  - When the connection closes, or a ping gets no message back within 10 s, the client reconnects with backoff from 1 s, doubling up to 30 s, then reloads everything it shows. The dashboard also reloads its identities and settings after a reconnect.
   - The store's "Live flags" indicator and a dashboard notice show when updates are interrupted.
-- **Proxy:** the Vite dev/preview proxy is configured to end the browser's stream when the API goes away. Otherwise the stream would hang silently.
+- **Proxy:** the Vite dev/preview proxy forwards the WebSocket (`ws: true`).
 
 ## MCP server
 

@@ -1,18 +1,37 @@
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp, SSE_HEARTBEAT_MS } from '../src/app.js';
+import type { WebSocketServer } from 'ws';
+import { LIVE_PATH, LIVE_PING } from '@flagship/shared';
+import { createApp } from '../src/app.js';
+import { attachLiveUpdates } from '../src/live.js';
 import { seededContext } from './helpers.js';
 
 let server: Server;
+let live: WebSocketServer;
+let ctx: Awaited<ReturnType<typeof seededContext>>;
 let base: string;
 
 beforeAll(async () => {
-  server = createApp(await seededContext()).listen(0);
+  ctx = await seededContext();
+  server = createApp(ctx).listen(0);
+  live = attachLiveUpdates(server, ctx.notifier);
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://localhost:${(server.address() as AddressInfo).port}/api`;
 });
-afterAll(() => new Promise((resolve) => server.close(resolve)));
+afterAll(() => {
+  live.clients.forEach((c) => c.terminate()); // a failed test may leave sockets open, which would block server.close()
+  live.close();
+  return new Promise((resolve) => server.close(resolve));
+});
+
+const openLive = () => new Promise<WebSocket>((resolve, reject) => {
+  const socket = new WebSocket(base.replace(/^http/, 'ws').replace(/\/api$/, LIVE_PATH));
+  socket.addEventListener('open', () => resolve(socket));
+  socket.addEventListener('error', reject);
+});
+const nextMessage = (socket: WebSocket) =>
+  new Promise<unknown>((resolve) => socket.addEventListener('message', (e) => resolve(JSON.parse(String(e.data))), { once: true }));
 
 const call = async (path: string, init: RequestInit & { actor?: string; json?: unknown } = {}) => {
   const res = await fetch(base + path, {
@@ -60,6 +79,33 @@ describe('REST API', () => {
   it('answers an oversized body with 413, not an internal error', async () => {
     const big = await call('/flags/new_search', { method: 'PATCH', actor: 'sara', json: { description: 'x'.repeat(70_000) } });
     expect(big).toMatchObject({ status: 413, body: { error: { code: 'PAYLOAD_TOO_LARGE' } } });
+  });
+
+  it('answers malformed requests with 4xx, not an internal error', async () => {
+    const post = (headers: Record<string, string>, body: string) =>
+      fetch(`${base}/flags`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-actor-id': 'leo', ...headers }, body }).then((r) => r.status);
+    expect(await post({ 'content-encoding': 'foo' }, '{}')).toBe(415);
+    expect(await post({ 'content-encoding': 'gzip' }, 'not gzip')).toBe(400);
+    expect((await fetch(`${base}/flags/%E0%A4%A`)).status).toBe(400);
+    let nested = '"x"';
+    for (let i = 0; i < 20_000; i++) nested = `[${nested}]`;
+    const deep = await fetch(`${base}/evaluate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: `{"environment":${nested},"user":"x"}` });
+    expect(deep.status).toBe(400);
+    expect((await deep.json()).error.message).toBe('Request body is nested too deeply.');
+  });
+
+  it('caps audit list requests at 100 entries', async () => {
+    expect((await call('/audit?limit=100')).status).toBe(200);
+    expect((await call('/audit?limit=101')).status).toBe(400);
+  });
+
+  it('refuses one of two simultaneous saves based on the same stored config', async () => {
+    const path = '/flags/new_search/environments/staging';
+    const { body: current } = await call(path);
+    const save = (weights: Record<string, number>) => call(path, { method: 'PUT', actor: 'ida',
+      json: { config: { ...current, variantWeights: weights }, expectedConfig: current } });
+    const statuses = (await Promise.all([save({ basic: 10, enhanced: 90 }), save({ basic: 90, enhanced: 10 })])).map((r) => r.status);
+    expect(statuses.sort()).toEqual([200, 409]);
   });
 
   it('does not advertise Express', async () => {
@@ -185,29 +231,39 @@ describe('REST API', () => {
     expect((await call('/environments/compare?environments=staging,qa')).status).toBe(400);
   });
 
-  it('streams change events over SSE', async () => {
-    const controller = new AbortController();
-    const res = await fetch(`${base}/events`, { signal: controller.signal });
-    const reader = res.body!.getReader();
+  it('sends committed changes over the live-update WebSocket', async () => {
+    const socket = await openLive();
+    const received = nextMessage(socket);
     const { body: current } = await call('/flags/cart_redesign/environments/development');
     await call('/flags/cart_redesign/environments/development', { method: 'PUT', actor: 'leo',
       json: { config: { ...current, variantWeights: { classic: 50, redesigned: 50 } } } });
-    let text = '';
-    while (!text.includes('event: change')) text += new TextDecoder().decode((await reader.read()).value);
-    controller.abort();
-    expect(text).toContain('"flagKey":"cart_redesign"');
+    expect(await received).toMatchObject({ type: 'change', event: { entity: 'config', flagKey: 'cart_redesign', environment: 'development' } });
+    socket.close();
   });
 
-  it('sends a named heartbeat event that clients use to detect a dead stream', async () => {
-    const controller = new AbortController();
-    const res = await fetch(`${base}/events`, { signal: controller.signal });
-    const reader = res.body!.getReader();
-    const started = Date.now();
-    let text = '';
-    while (!text.includes('event: heartbeat')) text += new TextDecoder().decode((await reader.read()).value);
-    controller.abort();
-    expect(Date.now() - started).toBeLessThan(SSE_HEARTBEAT_MS + 1000);
-  }, SSE_HEARTBEAT_MS + 3000);
+  it('answers a ping with a pong, which clients use to detect a dead connection', async () => {
+    const socket = await openLive();
+    const received = nextMessage(socket);
+    socket.send(LIVE_PING);
+    expect(await received).toEqual({ type: 'pong' });
+    socket.close();
+  });
+
+  it('stops sending to a connection once it closes', async () => {
+    const listeners = () => (ctx.notifier as unknown as { listeners: Set<unknown> }).listeners.size;
+    await expect.poll(listeners).toBe(0); // earlier tests' sockets finish closing
+    const socket = await openLive();
+    await expect.poll(listeners).toBe(1);
+    socket.close();
+    await expect.poll(listeners).toBe(0);
+  });
+
+  it('closes a connection that sends an oversized message', async () => {
+    const socket = await openLive();
+    const closed = new Promise<number>((resolve) => socket.addEventListener('close', (e) => resolve(e.code)));
+    socket.send('x'.repeat(2048));
+    expect(await closed).toBe(1009); // "message too big"
+  });
 });
 
 describe('settings', () => {

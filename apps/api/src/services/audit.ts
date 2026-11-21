@@ -1,6 +1,7 @@
 import { AUDIT_OPERATIONS, type Actor, type AuditEntry, type AuditOperation, type EnvironmentConfig } from '@flagship/shared';
 import { AppError, notFound } from '../errors.js';
 import type { AuditFilter } from '../repositories/audit.js';
+import { LIMITS } from '../validation/validators.js';
 import type { ServiceContext } from './context.js';
 import { parseEnvironment } from './evaluation.js';
 import { applyConfig, type AppliedConfig } from './flags.js';
@@ -18,7 +19,9 @@ export async function listAudit(ctx: ServiceContext, query: Record<string, unkno
   }
   if (query.limit !== undefined) {
     const limit = Number(query.limit);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new AppError('BAD_REQUEST', 'limit must be 1–1000.');
+    if (!Number.isInteger(limit) || limit < 1 || limit > LIMITS.auditEntries) {
+      throw new AppError('BAD_REQUEST', `limit must be 1–${LIMITS.auditEntries}.`);
+    }
     filter.limit = limit;
   }
   return ctx.store.listAudit(filter);

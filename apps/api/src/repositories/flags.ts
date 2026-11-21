@@ -49,6 +49,10 @@ export function upsertFlag(db: Db, flag: Flag): void {
     flag.status, JSON.stringify(flag.variants), flag.createdAt, flag.updatedAt);
 }
 
+export function touchFlag(db: Db, flagId: string, timestamp: string): void {
+  db.prepare('UPDATE flags SET updated_at = ? WHERE id = ?').run(timestamp, flagId);
+}
+
 /** Configs for all flags, keyed by flag key. */
 export function listConfigs(db: Db): Map<string, Record<Environment, EnvironmentConfig>> {
   const rows = db

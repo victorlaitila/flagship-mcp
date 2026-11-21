@@ -4,6 +4,7 @@ import type { AuditFilter, NewAuditEntry } from '../repositories/audit.js';
 /** One change inside a commit. */
 export type Write =
   | { type: 'putFlag'; flag: Flag }
+  /** Also sets the flag's `updatedAt` to `timestamp`, without touching its other fields. */
   | { type: 'putConfig'; flag: Flag; environment: Environment; config: EnvironmentConfig; timestamp: string }
   | { type: 'putSegment'; segment: Segment }
   | { type: 'deleteSegment'; segment: Segment };

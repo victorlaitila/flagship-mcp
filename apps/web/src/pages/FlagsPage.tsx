@@ -175,7 +175,7 @@ export function FlagsPage() {
             <tbody className="divide-y divide-line">
               {visible.map((flag) => (
                 <tr key={flag.key} className="group transition-colors hover:bg-raised/40">
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 wrap-anywhere">
                     <Link to={`/flags/${flag.key}`} className="block">
                       <div className="flex items-center gap-2 font-medium text-fg group-hover:text-accent-strong">
                         {flag.name} {flag.status === 'archived' && <Badge tone="danger">Archived</Badge>}
@@ -184,7 +184,7 @@ export function FlagsPage() {
                     </Link>
                   </td>
                   <td className="px-3 py-3 text-xs text-muted">{FLAG_TYPE_LABELS[flag.type]}</td>
-                  <td className="px-3 py-3 text-xs text-muted">{flag.owner}</td>
+                  <td className="px-3 py-3 text-xs text-muted wrap-anywhere">{flag.owner}</td>
                   {ENVIRONMENTS.map((e) => <EnvCell key={e} flag={flag} env={e} highlight={filters.environment === e} />)}
                   <td className="px-3 py-3 text-xs text-faint">{relativeTime(flag.updatedAt)}</td>
                 </tr>

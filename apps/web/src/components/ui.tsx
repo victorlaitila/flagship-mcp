@@ -42,7 +42,8 @@ export const Input = ({ className, ...props }: InputHTMLAttributes<HTMLInputElem
 );
 
 export const Select = ({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) => (
-  <select {...props} className={cx(fieldClass, 'pr-7', className)}>
+  // A select is as wide as its longest option (e.g. a 64-character flag key); never wider than its container.
+  <select {...props} className={cx(fieldClass, 'max-w-full pr-7', className)}>
     {children}
   </select>
 );
@@ -124,7 +125,7 @@ export function Badge({ children, tone = 'neutral', className }: { children: Rea
     danger: 'border-danger/30 text-danger bg-danger/10',
     warn: 'border-staging/30 text-staging bg-staging/10',
   };
-  return <span className={cx('inline-flex items-center gap-1 rounded border px-1.5 py-px text-[11px] font-medium', tones[tone], className)}>{children}</span>;
+  return <span className={cx('inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-px text-[11px] font-medium', tones[tone], className)}>{children}</span>;
 }
 
 /** Compact on/off pill used in tables. */

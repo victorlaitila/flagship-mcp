@@ -347,3 +347,10 @@ export interface ChangeEvent {
   segmentKey?: string;
   environment?: Environment;
 }
+
+/** WebSocket path for live updates. Clients send LIVE_PING; the server answers with a pong. */
+export const LIVE_PATH = '/api/live';
+export const LIVE_PING = '{"type":"ping"}';
+
+/** Server → client messages on the live-update connection. */
+export type LiveMessage = { type: 'change'; event: ChangeEvent } | { type: 'pong' };

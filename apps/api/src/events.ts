@@ -1,9 +1,14 @@
 import type { ChangeEvent } from '@flagship/shared';
 
+/** Delivers change events to live clients after a commit. Services call it through `publishChange`, which catches failures. */
+export interface ChangePublisher {
+  publish(event: ChangeEvent): Promise<void>;
+}
+
 type Listener = (event: ChangeEvent) => void;
 
-/** In-process pub/sub feeding the SSE endpoint. */
-export class ChangeNotifier {
+/** In-process pub/sub feeding the local WebSocket endpoint (`live.ts`). */
+export class ChangeNotifier implements ChangePublisher {
   private listeners = new Set<Listener>();
 
   subscribe(listener: Listener): () => void {
@@ -11,8 +16,7 @@ export class ChangeNotifier {
     return () => this.listeners.delete(listener);
   }
 
-  /** Called after a successful commit; a failing listener must not turn a saved change into an error response. */
-  publish(event: ChangeEvent): void {
+  async publish(event: ChangeEvent): Promise<void> {
     for (const listener of this.listeners) {
       try {
         listener(event);

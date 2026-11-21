@@ -12,10 +12,12 @@
   },
   "dependencies": {
     "@flagship/shared": "^0.0.0",
-    "express": "^5.3.0"
+    "express": "^5.3.0",
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "vitest": "^5.0.5"
   }

@@ -5,8 +5,9 @@ import { transaction, type Db } from './db.js';
 import type { Store, Write } from './store.js';
 
 /**
- * SQLite-backed store. Every method does its work synchronously, so a service call never interleaves
- * with another request's writes: its checks (e.g. the stale-write check) still hold when it commits.
+ * SQLite-backed store. Its methods never wait on real I/O, so between a service's reads and its commit no other
+ * request runs, and its checks (e.g. the stale-write check) still hold when it commits. Calls started together
+ * in the same tick, which HTTP requests never are, could interleave.
  */
 export class SqliteStore implements Store {
   constructor(readonly db: Db) {}
@@ -48,6 +49,7 @@ export class SqliteStore implements Store {
             break;
           case 'putConfig':
             flags.setConfig(this.db, write.flag.id, write.environment, write.config, write.timestamp);
+            flags.touchFlag(this.db, write.flag.id, write.timestamp);
             break;
           case 'putSegment':
             segments.upsertSegment(this.db, write.segment);
