@@ -30,6 +30,8 @@ SQLite tables (`apps/api/src/database/db.ts`):
 | `segments` | key, name, description, conditions |
 | `audit_log` | append-only: time, actor, operation, flag/segment key, environment, previous/next JSON, `rollback_of` |
 
+With `STORAGE=dynamodb`, the same data lives in one DynamoDB table (layout in `apps/api/src/database/dynamo-store.ts`, see [decision 16](DECISIONS.md#16-dynamodb-store-one-table-a-global-revision-guard-and-a-cached-state)).
+
 ## Evaluation
 
 Implemented in `apps/api/src/evaluation/engine.ts`, and used both for live evaluation and for previews. The steps run in order, and the first that applies decides:
@@ -74,6 +76,7 @@ Rules enforced by the API:
 - Archiving or restoring flags and managing segments are admin-only. Any role can create flags and edit flag metadata.
 - A flag can't be archived while it is a prerequisite of an active flag, or restored while one of its own prerequisites is archived. A segment can't be deleted while rules reference it (409, with the references).
 - **Stale writes:** when a config write or rollback includes `expectedConfig`, it is refused with 409 if the stored config differs. The dashboard and MCP server always send it.
+- **Overlapping writes:** any write is refused with 409 ("Flagship changed while this change was being saved…") if another change was committed while it was being checked. Only possible on DynamoDB, where requests run in parallel.
 - Every successful change writes an audit entry with the previous and new state; a save that changes nothing writes none.
 - **Rollback** restores the entry's *previous* config in full, as a new `config.rolled_back` entry. It is re-validated and permission-checked, and history is never modified.
 
@@ -153,7 +156,10 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 | Variable | Default | Used by |
 |---|---|---|
 | `PORT` | `4000` | API port |
-| `DATABASE_PATH` | `apps/api/data/flagship.db` | API database file |
+| `DATABASE_PATH` | `apps/api/data/flagship.db` | API database file (SQLite) |
+| `STORAGE` | `sqlite` | API storage: `sqlite` or `dynamodb`; any other value stops the API at startup |
+| `TABLE_NAME` | — | API: DynamoDB table; required with `STORAGE=dynamodb` |
+| `DYNAMODB_ENDPOINT` | — | API: DynamoDB Local URL (the table is created if missing); unset on AWS |
 | `PRODUCTION_READ_ONLY` | `false` | API: refuse every change to Production (see permissions). Only `true` or `false`; any other value stops the API at startup |
 | `API_URL` | `http://localhost:4000` | Web dev/preview proxy target |
 | `FLAGSHIP_API_URL` | `http://localhost:4000` | MCP server: API to call |
@@ -163,14 +169,16 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 
 | Suite | Location | Covers |
 |---|---|---|
-| API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity), HTTP integration including SSE |
+| API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity, overlapping writes), HTTP integration including the WebSocket; `dynamo-store.test.ts` covers the DynamoDB cache and concurrent instances |
 | MCP | `apps/mcp/test` | Every tool through the SDK client against a real in-process API: plan/apply binding, normalization, stale plans, Production refusal, failure modes. `stdio.test.ts` also starts the real server process over stdio, as Claude Code does. |
 | Web | `apps/web/test` | Live-update connection: backoff, reconnect, resync, dead-stream detection |
 | E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, archiving in Production, the store flag counter, malformed storefront data, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |
 
 Playwright starts its own API (port 4100, throwaway database) and web server (5174), so a running `npm run dev` and its database are never touched. The restart test starts a further pair (4120/5181) that it can stop and start. Tests run serially, and each restores what it changes.
 
-CI (`.github/workflows/ci.yml`) runs the build and all three Vitest suites in one job and Playwright in another, on every push to `main` and every pull request.
+`npm run test:dynamodb -w @flagship/api` runs the whole API suite again on DynamoDB Local, in a throwaway Docker container on a random port (needs Docker running). Each test gets a fresh table.
+
+CI (`.github/workflows/ci.yml`) runs the build, all three Vitest suites and the DynamoDB run in one job and Playwright in another, on every push to `main` and every pull request.
 
 ## Other limitations
 

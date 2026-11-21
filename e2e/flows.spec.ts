@@ -110,21 +110,22 @@ test('a Developer cannot modify Production', async ({ page, request }) => {
 test('archiving a flag enabled in Production asks for confirmation', async ({ page, request }) => {
   const status = async () => (await (await request.get('/api/flags/free_shipping_banner')).json()).status;
   try {
+    // exact: the Recent changes list also has a "Flag archived" button.
     await page.goto('/flags/free_shipping_banner');
-    await page.getByRole('button', { name: 'Archive' }).click();
+    await page.getByRole('button', { name: 'Archive', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('is enabled in Production');
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     expect(await status()).toBe('active');
 
-    await page.getByRole('button', { name: 'Archive' }).click();
+    await page.getByRole('button', { name: 'Archive', exact: true }).click();
     await dialog.getByRole('button', { name: 'Archive in production' }).click();
-    await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Restore', exact: true })).toBeVisible();
     expect(await status()).toBe('archived');
 
-    await page.getByRole('button', { name: 'Restore' }).click();
+    await page.getByRole('button', { name: 'Restore', exact: true }).click();
     await dialog.getByRole('button', { name: 'Restore in production' }).click();
-    await expect(page.getByRole('button', { name: 'Archive' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Archive', exact: true })).toBeVisible();
     expect(await status()).toBe('active');
   } finally {
     await request.post('/api/flags/free_shipping_banner/restore', { headers: ADMIN, data: { confirmProduction: true } });

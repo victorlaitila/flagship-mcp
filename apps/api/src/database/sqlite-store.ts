@@ -1,16 +1,20 @@
-import { getAuditEntry, insertAuditEntry, listAuditEntries, type AuditFilter, type NewAuditEntry } from '../repositories/audit.js';
+import { changedMeanwhile } from '../errors.js';
+import { getAuditEntry, insertAuditEntry, latestAuditId, listAuditEntries, type AuditFilter, type NewAuditEntry } from '../repositories/audit.js';
 import * as flags from '../repositories/flags.js';
 import * as segments from '../repositories/segments.js';
 import { transaction, type Db } from './db.js';
 import type { Store, Write } from './store.js';
 
 /**
- * SQLite-backed store. Its methods never wait on real I/O, so between a service's reads and its commit no other
- * request runs, and its checks (e.g. the stale-write check) still hold when it commits. Calls started together
- * in the same tick, which HTTP requests never are, could interleave.
+ * SQLite-backed store. Its methods never wait on real I/O, so HTTP requests never interleave between a service's
+ * reads and its commit; the revision check only refuses calls started together in the same tick.
  */
 export class SqliteStore implements Store {
   constructor(readonly db: Db) {}
+
+  async revision() {
+    return latestAuditId(this.db);
+  }
 
   async getFlag(key: string) {
     return flags.getFlag(this.db, key);
@@ -40,8 +44,9 @@ export class SqliteStore implements Store {
     return getAuditEntry(this.db, id);
   }
 
-  async commit(writes: Write[], audit: NewAuditEntry) {
+  async commit(writes: Write[], audit: NewAuditEntry, revision: number) {
     return transaction(this.db, () => {
+      if (latestAuditId(this.db) !== revision) throw changedMeanwhile();
       for (const write of writes) {
         switch (write.type) {
           case 'putFlag':

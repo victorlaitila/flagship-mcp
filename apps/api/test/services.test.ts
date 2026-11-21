@@ -187,10 +187,12 @@ describe('stored flag row', () => {
   it('a config save only touches the flag\'s modified time, never its other fields', async () => {
     const stale = (await ctx.store.getFlag('new_search'))!;
     await ctx.store.commit([{ type: 'putFlag', flag: { ...stale, name: 'Renamed elsewhere', status: 'archived' } }],
-      { timestamp: '2026-10-31T12:00:00Z', actor: admin, operation: 'flag.updated', flagKey: 'new_search', previous: null, next: null });
-    // A save that started before the rename still holds the old flag object.
+      { timestamp: '2026-10-31T12:00:00Z', actor: admin, operation: 'flag.updated', flagKey: 'new_search', previous: null, next: null },
+      await ctx.store.revision());
+    // A config save holding an older copy of the flag object.
     await ctx.store.commit([{ type: 'putConfig', flag: stale, environment: 'development', config: await config('new_search', 'development'), timestamp: '2026-11-01T00:00:00Z' }],
-      { timestamp: '2026-11-01T00:00:00Z', actor: admin, operation: 'config.updated', flagKey: 'new_search', environment: 'development', previous: null, next: null });
+      { timestamp: '2026-11-01T00:00:00Z', actor: admin, operation: 'config.updated', flagKey: 'new_search', environment: 'development', previous: null, next: null },
+      await ctx.store.revision());
     expect(await ctx.store.getFlag('new_search')).toMatchObject({ name: 'Renamed elsewhere', status: 'archived', updatedAt: '2026-11-01T00:00:00Z' });
   });
 });
@@ -200,15 +202,34 @@ describe('atomicity', () => {
     const flag = (await ctx.store.getFlag('loyalty_program'))!;
     const before = await config('loyalty_program', 'development');
     const auditCount = (await listAudit(ctx, {})).length;
+    const missing = { ...flag, id: 'missing', key: 'missing' };
     await expect(ctx.store.commit(
       [
         { type: 'putConfig', flag, environment: 'development', config: { ...before, enabled: false }, timestamp: '2026-10-31T12:00:00Z' },
-        { type: 'putSegment', segment: { id: 'broken' } as Segment }, // violates NOT NULL
+        { type: 'putConfig', flag: missing, environment: 'development', config: before, timestamp: '2026-10-31T12:00:00Z' }, // no such flag
       ],
       { timestamp: '2026-10-31T12:00:00Z', actor: admin, operation: 'config.updated', previous: null, next: null },
+      await ctx.store.revision(),
     )).rejects.toThrow();
     expect(await config('loyalty_program', 'development')).toEqual(before);
     expect((await listAudit(ctx, {})).length).toBe(auditCount);
+  });
+
+  it('refuses a commit if anything was committed after its revision was read', async () => {
+    const flag = (await ctx.store.getFlag('loyalty_program'))!;
+    const before = await config('loyalty_program', 'development');
+    const revision = await ctx.store.revision();
+    // Another request saves in between.
+    await applyConfig(ctx, developer, 'new_search', 'development', { ...(await config('new_search', 'development')), enabled: false }, false);
+    const auditCount = (await listAudit(ctx, {})).length;
+    await expect(ctx.store.commit(
+      [{ type: 'putConfig', flag, environment: 'development', config: { ...before, enabled: false }, timestamp: '2026-10-31T12:00:00Z' }],
+      { timestamp: '2026-10-31T12:00:00Z', actor: admin, operation: 'config.updated', flagKey: flag.key, environment: 'development', previous: before, next: null },
+      revision,
+    )).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await config('loyalty_program', 'development')).toEqual(before);
+    expect((await listAudit(ctx, {})).length).toBe(auditCount);
+    expect(await ctx.store.revision()).toBe(revision + 1);
   });
 
   it('publishes change events only after a successful save', async () => {

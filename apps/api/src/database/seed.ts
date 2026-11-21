@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Condition, Environment, EnvironmentConfig, Flag, Segment, TargetingRule } from '@flagship/shared';
 import { ACTORS, SYSTEM_ACTOR } from '../demo.js';
-import type { Db } from './db.js';
-import type { Store } from './store.js';
+import type { NewAuditEntry } from '../repositories/audit.js';
+import type { Store, Write } from './store.js';
 
 const [leo, ida, sara] = ACTORS;
 const DAY = 24 * 60 * 60 * 1000;
@@ -172,17 +172,16 @@ const HISTORY: { daysAgo: number; actor: typeof leo; flagKey: string; environmen
   { daysAgo: 1, actor: sara, flagKey: 'ai_recommendations', environment: 'production', previous: (c) => ({ ...c, rolloutPercentage: 10 }) },
 ];
 
-export function isSeeded(db: Db): boolean {
-  return (db.prepare('SELECT COUNT(*) AS n FROM flags').get() as { n: number }).n > 0;
-}
-
 /** Seeds an empty store, one commit per seeded change so the audit log reads like real history. */
 export async function seed(store: Store, now = Date.now()): Promise<void> {
+  // One revision threaded through, so a second seeder running at the same time fails instead of interleaving.
+  let revision = await store.revision();
+  const commit = async (writes: Write[], audit: NewAuditEntry) => (revision = await store.commit(writes, audit, revision));
   const at = (daysAgo: number, offsetMinutes = 0) => new Date(now - daysAgo * DAY + offsetMinutes * 60_000).toISOString();
 
   for (const s of SEGMENTS) {
     const timestamp = at(60);
-    await store.commit([{ type: 'putSegment', segment: { ...s, id: randomUUID(), createdAt: timestamp, updatedAt: timestamp } }],
+    await commit([{ type: 'putSegment', segment: { ...s, id: randomUUID(), createdAt: timestamp, updatedAt: timestamp } }],
       { timestamp, actor: SYSTEM_ACTOR, operation: 'segment.created', segmentKey: s.key, previous: null, next: s });
   }
 
@@ -191,7 +190,7 @@ export async function seed(store: Store, now = Date.now()): Promise<void> {
     const lastChange = HISTORY.filter((h) => h.flagKey === flag.key).at(-1);
     const updatedAt = lastChange ? at(lastChange.daysAgo) : created;
     const stored: Flag = { ...flag, id: randomUUID(), status: 'active', createdAt: created, updatedAt };
-    await store.commit(
+    await commit(
       [
         { type: 'putFlag', flag: stored },
         ...(Object.entries(configs) as [Environment, EnvironmentConfig][]).map(([environment, config]) =>
@@ -203,7 +202,7 @@ export async function seed(store: Store, now = Date.now()): Promise<void> {
 
   for (const h of HISTORY) {
     const current = FLAGS.find((f) => f.flag.key === h.flagKey)!.configs[h.environment];
-    await store.commit([], { timestamp: at(h.daysAgo), actor: h.actor, operation: 'config.updated', flagKey: h.flagKey,
+    await commit([], { timestamp: at(h.daysAgo), actor: h.actor, operation: 'config.updated', flagKey: h.flagKey,
       environment: h.environment, previous: h.previous(current), next: current });
   }
 }

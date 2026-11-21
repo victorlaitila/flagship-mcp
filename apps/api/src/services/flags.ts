@@ -51,6 +51,7 @@ function initialConfig(flag: Flag): EnvironmentConfig {
 }
 
 export async function createFlag(ctx: ServiceContext, actor: Actor, input: unknown): Promise<FlagWithConfigs> {
+  const revision = await ctx.store.revision();
   const flags = await listFlags(ctx);
   if (flags.length >= LIMITS.flags) {
     throw new AppError('CONFLICT', `Flagship allows at most ${LIMITS.flags} flags, archived ones included.`);
@@ -68,12 +69,14 @@ export async function createFlag(ctx: ServiceContext, actor: Actor, input: unkno
       ...ENVIRONMENTS.map((environment) => ({ type: 'putConfig' as const, flag, environment, config: initialConfig(flag), timestamp })),
     ],
     { timestamp, actor, operation: 'flag.created', flagKey: flag.key, previous: null, next: flag },
+    revision,
   );
   await publishChange(ctx, { entity: 'flag', flagKey: flag.key, auditId });
   return getFlag(ctx, flag.key);
 }
 
 export async function updateFlag(ctx: ServiceContext, actor: Actor, key: string, input: unknown): Promise<FlagWithConfigs> {
+  const revision = await ctx.store.revision();
   const flag = await requireFlag(ctx, key);
   const { value, issues } = validateUpdateFlag(input);
   if (!value) throw invalid(issues);
@@ -81,7 +84,7 @@ export async function updateFlag(ctx: ServiceContext, actor: Actor, key: string,
   if (Object.entries(value).every(([field, v]) => isDeepStrictEqual(flag[field as keyof Flag], v))) return getFlag(ctx, key);
   const next: Flag = { ...flag, ...value, updatedAt: ctx.now().toISOString() };
   const auditId = await ctx.store.commit([{ type: 'putFlag', flag: next }],
-    { timestamp: next.updatedAt, actor, operation: 'flag.updated', flagKey: key, previous: flag, next });
+    { timestamp: next.updatedAt, actor, operation: 'flag.updated', flagKey: key, previous: flag, next }, revision);
   await publishChange(ctx, { entity: 'flag', flagKey: key, auditId });
   return getFlag(ctx, key);
 }
@@ -94,6 +97,7 @@ export async function setFlagStatus(
   confirmProduction?: unknown,
 ): Promise<FlagWithConfigs> {
   assertCanManageGlobal(actor, status === 'archived' ? 'archive flags' : 'restore flags');
+  const revision = await ctx.store.revision();
   const flag = await requireFlag(ctx, key);
   if (flag.status === status) return getFlag(ctx, key);
   const flags = await listFlags(ctx);
@@ -124,7 +128,7 @@ export async function setFlagStatus(
   const auditId = await ctx.store.commit([{ type: 'putFlag', flag: next }], {
     timestamp: next.updatedAt, actor, operation: status === 'archived' ? 'flag.archived' : 'flag.restored',
     flagKey: key, previous: flag, next,
-  });
+  }, revision);
   await publishChange(ctx, { entity: 'flag', flagKey: key, auditId });
   return getFlag(ctx, key);
 }
@@ -166,6 +170,7 @@ export async function applyConfig(
   confirmProduction: unknown,
   { operation = 'config.updated', rollbackOf = null, expectedConfig }: ApplyOptions = {},
 ): Promise<AppliedConfig> {
+  const revision = await ctx.store.revision();
   const flag = await requireFlag(ctx, flagKey);
   assertCanManageEnvironment(actor, environment);
   if (environment === 'production') assertProductionWritable(ctx);
@@ -182,6 +187,7 @@ export async function applyConfig(
   const auditId = await ctx.store.commit(
     [{ type: 'putConfig', flag, environment, config: value, timestamp }],
     { timestamp, actor, operation, flagKey, environment, previous, next: value, rollbackOf },
+    revision,
   );
   await publishChange(ctx, { entity: 'config', flagKey, environment, auditId });
   return { config: value, auditId };

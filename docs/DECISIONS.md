@@ -19,6 +19,7 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 | [13](#13-storage-behind-an-async-store-interface-with-one-commit-per-change) | Storage behind an async `Store` interface, with one commit per change | Accepted |
 | [14](#14-guardrails-for-a-public-deployment-read-only-production-and-size-limits) | Guardrails for a public deployment: read-only Production and size limits | Accepted |
 | [15](#15-live-updates-over-websocket-with-client-side-pings) | Live updates over WebSocket, with client-side pings | Accepted |
+| [16](#16-dynamodb-store-one-table-a-global-revision-guard-and-a-cached-state) | DynamoDB store: one table, a global revision guard and a cached state | Accepted |
 
 ---
 
@@ -228,3 +229,18 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 - *Long polling.* Rejected: Lambda bills the time spent waiting.
 
 **Consequences.** One transport locally and on AWS, so the tests exercise what runs in production. Pings, not server heartbeats, detect dead connections, because API Gateway can't push on a timer; detection takes up to 30 s instead of 15 s. Timing the deadline from the ping, not from the last message, keeps hidden tabs connected even though browsers fire their repeating timers only once a minute. The pings also keep connections under API Gateway's 10-minute idle timeout. The AWS publisher must store connection ids, send to each, drop dead ones and cap the number of connections.
+
+### 16. DynamoDB store: one table, a global revision guard and a cached state
+
+**Context.** On AWS the API runs as Lambda instances on DynamoDB, so other requests can commit between a service's checks and its commit (decision 13). Evaluation reads every flag, and the table has only a few provisioned read units per second.
+
+**Decision.**
+- `DynamoStore` (`apps/api/src/database/dynamo-store.ts`) uses one table: flags, configs and segments in one partition, audit entries in another, and a revision counter (the latest audit id). Entities are stored as JSON strings, as in SQLite, because DynamoDB maps don't keep key order and clients compare configs by their JSON.
+- Every write service reads `store.revision()` before its checks and passes it to `commit`, which refuses with 409 if anything was committed since. On DynamoDB the commit is one `TransactWriteItems` that moves the counter on, on condition that it still has the old value; `SqliteStore` makes the same check inside its transaction.
+- Each instance caches flags, configs and segments and re-reads them only when the counter changes. Every read still reads the counter, strongly consistently, so other instances' changes show up at once.
+
+**Alternatives considered.**
+- *Conditions on the items a service read.* Rejected: checks read wide (other flags' prerequisites, segment references, counts), so every commit would have to list everything its checks read.
+- *Reading the table on every request.* Rejected: evaluation reads every flag, which would quickly exceed the provisioned read capacity.
+
+**Consequences.** Any two overlapping writes conflict, even on unrelated flags. That's fine with one visitor at a time; a busy product would need finer guards. Filtered audit lists page through the newest entries without an index, which the nightly reset keeps cheap. `npm run test:dynamodb` runs the whole API suite on DynamoDB Local in Docker, in CI too.

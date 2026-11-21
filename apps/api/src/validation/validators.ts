@@ -38,7 +38,7 @@ export const LIMITS = {
   auditEntries: 100,
 } as const;
 
-const KEY_MESSAGE = 'must be 2-64 chars: lowercase letters, digits and underscores, starting with a letter.';
+const KEY_MESSAGE = 'must be 2–64 chars: lowercase letters, digits and underscores, starting with a letter.';
 
 function checkBytes(value: unknown, max: number, path: string, what: string, issues: Issues): void {
   const bytes = Buffer.byteLength(JSON.stringify(value));

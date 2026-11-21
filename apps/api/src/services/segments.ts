@@ -39,6 +39,7 @@ export async function getSegment(ctx: ServiceContext, key: string): Promise<Segm
 
 export async function createSegment(ctx: ServiceContext, actor: Actor, input: unknown): Promise<SegmentWithUsage> {
   assertCanManageGlobal(actor, 'manage segments (they apply to every environment)');
+  const revision = await ctx.store.revision();
   const segments = await ctx.store.listSegments();
   if (segments.length >= LIMITS.segments) {
     throw new AppError('CONFLICT', `Flagship allows at most ${LIMITS.segments} segments. Delete an unused one first.`);
@@ -49,13 +50,14 @@ export async function createSegment(ctx: ServiceContext, actor: Actor, input: un
   const timestamp = ctx.now().toISOString();
   const segment: Segment = { id: randomUUID(), ...value, createdAt: timestamp, updatedAt: timestamp };
   const auditId = await ctx.store.commit([{ type: 'putSegment', segment }],
-    { timestamp, actor, operation: 'segment.created', segmentKey: segment.key, previous: null, next: segment });
+    { timestamp, actor, operation: 'segment.created', segmentKey: segment.key, previous: null, next: segment }, revision);
   await publishChange(ctx, { entity: 'segment', segmentKey: segment.key, auditId });
   return withUsage(segment, await ctx.store.listFlagsWithConfigs());
 }
 
 export async function updateSegment(ctx: ServiceContext, actor: Actor, key: string, input: unknown): Promise<SegmentWithUsage> {
   assertCanManageGlobal(actor, 'manage segments (they apply to every environment)');
+  const revision = await ctx.store.revision();
   const previous = await requireSegment(ctx, key);
   // Production rules that use the segment would change with it.
   const flags = await ctx.store.listFlagsWithConfigs();
@@ -64,7 +66,7 @@ export async function updateSegment(ctx: ServiceContext, actor: Actor, key: stri
   if (!value) throw invalid(issues);
   const next: Segment = { ...previous, ...value, key, updatedAt: ctx.now().toISOString() };
   const auditId = await ctx.store.commit([{ type: 'putSegment', segment: next }],
-    { timestamp: next.updatedAt, actor, operation: 'segment.updated', segmentKey: key, previous, next });
+    { timestamp: next.updatedAt, actor, operation: 'segment.updated', segmentKey: key, previous, next }, revision);
   await publishChange(ctx, { entity: 'segment', segmentKey: key, auditId });
   return withUsage(next, flags);
 }
@@ -72,12 +74,13 @@ export async function updateSegment(ctx: ServiceContext, actor: Actor, key: stri
 /** Referenced segments cannot be deleted: rules would silently stop matching. */
 export async function deleteSegment(ctx: ServiceContext, actor: Actor, key: string): Promise<void> {
   assertCanManageGlobal(actor, 'manage segments (they apply to every environment)');
+  const revision = await ctx.store.revision();
   const segment = await requireSegment(ctx, key);
   const refs = findReferences(await ctx.store.listFlagsWithConfigs(), key);
   if (refs.length > 0) {
     throw new AppError('CONFLICT', `Segment "${key}" is used by ${refs.length} targeting rule(s). Remove those rules first.`, undefined, { references: refs });
   }
   const auditId = await ctx.store.commit([{ type: 'deleteSegment', segment }],
-    { timestamp: ctx.now().toISOString(), actor, operation: 'segment.deleted', segmentKey: key, previous: segment, next: null });
+    { timestamp: ctx.now().toISOString(), actor, operation: 'segment.deleted', segmentKey: key, previous: segment, next: null }, revision);
   await publishChange(ctx, { entity: 'segment', segmentKey: key, auditId });
 }

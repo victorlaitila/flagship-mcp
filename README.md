@@ -48,6 +48,7 @@ e2e               Playwright end-to-end tests
 |---|---|
 | `npm run dev` | API on :4000 and web on :5173, with reload |
 | `npm test` | API, MCP and web tests (Vitest) |
+| `npm run test:dynamodb -w @flagship/api` | API tests on DynamoDB Local (needs Docker running) |
 | `npm run test:e2e` | Browser tests (Playwright) on an isolated stack; one-time setup: `npx playwright install chromium` |
 | `npm run build` | Typecheck everything and build the web app |
 | `npm run db:reset` | Delete and re-seed the local database |

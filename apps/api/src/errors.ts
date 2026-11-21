@@ -26,5 +26,8 @@ export class AppError extends Error {
 }
 
 export const notFound = (what: string) => new AppError('NOT_FOUND', `${what} not found.`);
+/** A store refused a commit because something else was committed after the service read its revision. */
+export const changedMeanwhile = () =>
+  new AppError('CONFLICT', 'Flagship changed while this change was being saved, so nothing was saved. Review the current state and try again.');
 export const invalid = (issues: ValidationIssue[], message = 'Validation failed.') =>
   new AppError('VALIDATION_FAILED', message, issues);

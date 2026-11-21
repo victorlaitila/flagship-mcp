@@ -55,6 +55,10 @@ export function insertAuditEntry(db: Db, e: NewAuditEntry): number {
   return Number(lastInsertRowid);
 }
 
+export function latestAuditId(db: Db): number {
+  return (db.prepare('SELECT COALESCE(MAX(id), 0) AS id FROM audit_log').get() as { id: number }).id;
+}
+
 export interface AuditFilter {
   flagKey?: string;
   actorId?: string;
