@@ -182,7 +182,7 @@ Guardrails are in `GUARDRAILS` (`infra/lib/flagship-stack.ts`) and pinned by `in
 - At most 10 concurrent Lambda executions (the account quota; it leaves none to reserve).
 - DynamoDB provisioned at 25 read / 25 write units, the always-free allowance and a hard ceiling.
 - Logs kept 7 days; no VPC, NAT, custom domain or Route 53.
-- CloudFront is on the free flat-rate plan (no overage charges). The plan's WAF web ACL, with a per-IP rate rule of 600 requests per 5 minutes, is managed in the console; the stack only keeps it attached (`webAclArn` in `infra/cdk.json`).
+- CloudFront is on the free flat-rate plan (no overage charges). The plan's WAF web ACL, is managed outside the stack: a per-IP rate rule (600 requests per 5 minutes), AWS's IP reputation list and the known-bad-inputs rules block; the common rule set only counts, because its 8 KB body limit would refuse maximum-size config saves; the stack only keeps it attached (`webAclArn` in `infra/cdk.json`).
 - Kill switch: when actual monthly cost passes $1, it sets the API and live functions' concurrency to 0 and both API throttles to 0. Restore with `aws lambda invoke --region us-east-1 --function-name <KillSwitchFunction output> --cli-binary-format raw-in-base64-out --payload '{"action":"restore"}' out.json`.
 
 Deploying by hand: `npm run build`, then from `infra/`: `npx cdk deploy --all --profile flagship -c alertEmail=<email>`. After the first deploy, invoke the `reset` function once to seed the table.
