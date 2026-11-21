@@ -30,7 +30,7 @@ SQLite tables (`apps/api/src/database/db.ts`):
 | `segments` | key, name, description, conditions |
 | `audit_log` | append-only: time, actor, operation, flag/segment key, environment, previous/next JSON, `rollback_of` |
 
-With `STORAGE=dynamodb`, the same data lives in one DynamoDB table (layout in `apps/api/src/database/dynamo-store.ts`, see [decision 16](DECISIONS.md#16-dynamodb-store-one-table-a-global-revision-guard-and-a-cached-state)).
+With `STORAGE=dynamodb`, the same data lives in one DynamoDB table (layout in `apps/api/src/database/dynamo-store.ts`, see [decision 16](DECISIONS.md#16-dynamodb-store-one-table-a-global-revision-guard-and-a-cached-state)), together with the open live connections. Resetting it (`npm run db:reset` with `STORAGE=dynamodb`, or the `reset` Lambda) deletes the data and seeds again but keeps the revision counter moving forward, so caches and in-flight writes never mistake new data for old.
 
 ## Evaluation
 
@@ -129,6 +129,7 @@ JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "d
   - When the connection closes, or a ping gets no message back within 10 s, the client reconnects with backoff from 1 s, doubling up to 30 s, then reloads everything it shows. The dashboard also reloads its identities and settings after a reconnect.
   - The store's "Live flags" indicator and a dashboard notice show when updates are interrupted.
 - **Proxy:** the Vite dev/preview proxy forwards the WebSocket (`ws: true`).
+- **On AWS** (`apps/api/src/lambda.ts`, `aws/connections.ts`): an API Gateway WebSocket API. `$connect` refuses (429) beyond 20 open connections; connections are stored in the table and stop counting after API Gateway's 2-hour limit even if `$disconnect` never arrives. API Gateway answers pings itself. After each commit the API sends the change to every connection and drops those reported gone.
 
 ## MCP server
 
@@ -160,6 +161,7 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 | `STORAGE` | `sqlite` | API storage: `sqlite` or `dynamodb`; any other value stops the API at startup |
 | `TABLE_NAME` | — | API: DynamoDB table; required with `STORAGE=dynamodb` |
 | `DYNAMODB_ENDPOINT` | — | API: DynamoDB Local URL (the table is created if missing); unset on AWS |
+| `LIVE_CALLBACK_URL` | — | Lambda: the WebSocket API's callback URL for sending changes; required by `lambda.ts` |
 | `PRODUCTION_READ_ONLY` | `false` | API: refuse every change to Production (see permissions). Only `true` or `false`; any other value stops the API at startup |
 | `API_URL` | `http://localhost:4000` | Web dev/preview proxy target |
 | `FLAGSHIP_API_URL` | `http://localhost:4000` | MCP server: API to call |
@@ -169,7 +171,7 @@ The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-i
 
 | Suite | Location | Covers |
 |---|---|---|
-| API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity, overlapping writes), HTTP integration including the WebSocket; `dynamo-store.test.ts` covers the DynamoDB cache and concurrent instances |
+| API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity, overlapping writes), HTTP integration including the WebSocket; `dynamo-store.test.ts` covers the DynamoDB cache and concurrent instances; `aws.test.ts` the Lambda handlers, connection cap and reset |
 | MCP | `apps/mcp/test` | Every tool through the SDK client against a real in-process API: plan/apply binding, normalization, stale plans, Production refusal, failure modes. `stdio.test.ts` also starts the real server process over stdio, as Claude Code does. |
 | Web | `apps/web/test` | Live-update connection: backoff, reconnect, resync, dead-stream detection |
 | E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, archiving in Production, the store flag counter, malformed storefront data, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |

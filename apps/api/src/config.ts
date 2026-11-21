@@ -17,3 +17,5 @@ export const TABLE_NAME = process.env.TABLE_NAME ?? '';
 if (STORAGE === 'dynamodb' && !TABLE_NAME) throw new Error('STORAGE=dynamodb needs TABLE_NAME.');
 /** DynamoDB Local's URL; unset on AWS. */
 export const DYNAMODB_ENDPOINT = process.env.DYNAMODB_ENDPOINT || undefined;
+/** On AWS: the WebSocket API's callback URL, for sending changes to live connections. */
+export const LIVE_CALLBACK_URL = process.env.LIVE_CALLBACK_URL || undefined;

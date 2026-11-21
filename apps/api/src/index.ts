@@ -1,7 +1,7 @@
 import { createApp } from './app.js';
 import { DATABASE_PATH, DYNAMODB_ENDPOINT, PORT, PRODUCTION_READ_ONLY, STORAGE, TABLE_NAME } from './config.js';
 import { openDatabase } from './database/db.js';
-import { createTable, dynamoClient, DynamoStore } from './database/dynamo-store.js';
+import { createTableIfMissing, dynamoClient, DynamoStore } from './database/dynamo-store.js';
 import { seed } from './database/seed.js';
 import { SqliteStore } from './database/sqlite-store.js';
 import type { Store } from './database/store.js';
@@ -11,7 +11,7 @@ import { attachLiveUpdates } from './live.js';
 async function openStore(): Promise<Store> {
   if (STORAGE === 'sqlite') return new SqliteStore(openDatabase(DATABASE_PATH));
   const client = dynamoClient(DYNAMODB_ENDPOINT);
-  if (DYNAMODB_ENDPOINT) await createTable(client, TABLE_NAME).catch((e: Error) => { if (e.name !== 'ResourceInUseException') throw e; });
+  if (DYNAMODB_ENDPOINT) await createTableIfMissing(client, TABLE_NAME);
   return new DynamoStore(client, TABLE_NAME);
 }
 

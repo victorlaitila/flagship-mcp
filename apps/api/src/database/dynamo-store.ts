@@ -24,7 +24,7 @@ interface State {
   segments: Segment[];
 }
 
-const REVISION_KEY = { pk: 'meta', sk: 'revision' };
+export const REVISION_KEY = { pk: 'meta', sk: 'revision' };
 const flagKey = (key: string) => ({ pk: 'state', sk: `flag#${key}` });
 const configKey = (key: string, environment: Environment) => ({ pk: 'state', sk: `config#${key}#${environment}` });
 const segmentKey = (key: string) => ({ pk: 'state', sk: `segment#${key}` });
@@ -45,6 +45,13 @@ export async function createTable(client: DynamoDBDocumentClient, TableName: str
     AttributeDefinitions: [{ AttributeName: 'pk', AttributeType: 'S' }, { AttributeName: 'sk', AttributeType: 'S' }],
     KeySchema: [{ AttributeName: 'pk', KeyType: 'HASH' }, { AttributeName: 'sk', KeyType: 'RANGE' }],
   }));
+}
+
+/** Local runs against DynamoDB Local start without a table. */
+export async function createTableIfMissing(client: DynamoDBDocumentClient, tableName: string): Promise<void> {
+  await createTable(client, tableName).catch((e: Error) => {
+    if (e.name !== 'ResourceInUseException') throw e;
+  });
 }
 
 /**
