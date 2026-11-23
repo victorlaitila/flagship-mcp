@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Flagship is a local feature-flag platform: an Express + SQLite API, a React dashboard and demo storefront, and an MCP server for AI assistants. It is a portfolio demo: identities are simulated, and there's no authentication and no deployment.
+Flagship is a feature-flag platform: an Express API (SQLite locally, DynamoDB on AWS), a React dashboard and demo storefront, and an MCP server for AI assistants. It is a portfolio demo, with a public deployment at https://flagship.victorlaitila.com (`infra/`, decision 17): identities are simulated, and there's no authentication.
 
 Read `docs/DECISIONS.md` before changing architecture, and `docs/REFERENCE.md` for exact behaviour (evaluation, permissions, API, MCP tools).
 
@@ -25,7 +25,7 @@ These prevent real bugs; don't break them without an explicit decision (and a ne
 - Permissions and Production confirmation are enforced in the backend; the UI only mirrors them.
 - Anything that can change Production evaluation calls `assertProductionWritable` before Production confirmation: Production config writes and rollbacks, archiving or restoring a flag enabled in Production, editing a segment used by Production rules. A new write path that can reach Production needs it too.
 - Every write service reads `ctx.store.revision()` before its checks and passes it to `commit`, which refuses (409) if anything was committed in between. Reading it after the checks lets overlapping writes save on stale data (on DynamoDB, requests run in parallel).
-- The app is being prepared for a public deployment: treat every endpoint as reachable by anyone, with any input. Guardrail settings fail closed: an invalid value stops startup instead of switching the guardrail off.
+- The app is publicly deployed: treat every endpoint as reachable by anyone, with any input. Guardrail settings fail closed: an invalid value stops startup instead of switching the guardrail off. Changes to `GUARDRAILS` or the kill switch must keep `infra/test/stack.test.ts` passing; loosening a guardrail is a deliberate decision.
 - Live updates (WebSocket at `/api/live`): change events are invalidation signals and clients refetch. The client's ping (`PING_INTERVAL_MS`), the server's pong (`apps/api/src/live.ts`) and the client's pong deadline (`PONG_TIMEOUT_MS` in `apps/web/src/hooks/useLive.ts`, timed from each ping so hidden tabs stay connected) belong together; removing one brings back silently dead live updates. Services publish changes with `publishChange`, after the commit; it never fails the request.
 - React effects return only `undefined` or a cleanup function, and clean up subscriptions and listeners.
 

@@ -23,5 +23,5 @@ new FlagshipStack(app, 'Flagship', {
 });
 new KillSwitchStack(app, 'FlagshipKillSwitch', { env: { account, region: 'us-east-1' }, appRegion: region, alertEmail, reservedConcurrency });
 // Deployed by hand (`cdk deploy FlagshipGitHubDeploy`); CI deploys only the two stacks above.
-new GitHubDeployStack(app, 'FlagshipGitHubDeploy', { env: { account, region }, repository: 'victorlaitila/flagship-mcp' });
+new GitHubDeployStack(app, 'FlagshipGitHubDeploy', { env: { account, region }, subjectPrefix: 'repo:victorlaitila@130091468/flagship-mcp@1442190977' });
 Tags.of(app).add('project', 'flagship');

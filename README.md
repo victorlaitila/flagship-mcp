@@ -1,12 +1,12 @@
 # Flagship
 
-A local feature flag platform with three working parts on one backend:
+A feature flag platform with three working parts on one backend. It runs locally, and as a public demo at **https://flagship.victorlaitila.com**.
 
 - **Dashboard**: manage flags per environment (Development, Staging, Production) with targeting rules, percentage rollouts, variants, prerequisites, previews, an audit log and rollback.
 - **Demo storefront ("Nordhem")**: a simulated shop whose features are switched entirely by the flag service, and which updates live when a flag changes.
 - **MCP server**: lets an AI assistant such as Claude Code inspect, plan and (outside Production) apply flag changes through the same API, with the same validation, permissions and audit trail.
 
-> **Demo project.** No real purchases, payments, emails or deployments happen. Environments, customers and user identities are simulated inside this one local application.
+> **Demo project.** No real purchases, payments or emails happen. Environments, customers and user identities are simulated.
 
 ## Quick start
 
@@ -57,4 +57,5 @@ infra             AWS CDK stacks for the public demo (see docs/REFERENCE.md, Dep
 
 ## Limitations
 
-- No authentication: identities are simulated (`X-Actor-Id`), and the backend enforces permissions as a workflow demonstration, not a security boundary. The API therefore only accepts connections from your own machine; exposing it further would require real authentication.
+- No authentication: identities are simulated (`X-Actor-Id`), and the backend enforces permissions as a workflow demonstration, not a security boundary. Locally the API only accepts connections from your own machine.
+- The public demo is open to anyone: Production is read-only there, the data is reset nightly at 03:00 Helsinki time, and its API stops if the month's AWS cost passes $1 ([decision 17](docs/DECISIONS.md#17-a-public-serverless-demo-on-aws-capped-by-throttles-and-a-budget-kill-switch)).

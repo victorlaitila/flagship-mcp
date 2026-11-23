@@ -152,7 +152,7 @@ JSON throughout. Errors look like `{ "error": { "code", "message", "issues?", "d
 
 ## Configuration
 
-The API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-identities-with-backend-enforced-permissions)). All variables are optional:
+Locally, the API listens on `localhost` only (see [decision 5](DECISIONS.md#5-simulated-identities-with-backend-enforced-permissions)). All variables are optional:
 
 | Variable | Default | Used by |
 |---|---|---|
@@ -181,8 +181,8 @@ Guardrails are in `GUARDRAILS` (`infra/lib/flagship-stack.ts`) and pinned by `in
 - HTTP API 10 requests/s (burst 30), WebSocket API 5/s (burst 10). Lower limits refused ordinary page loads at random, since API Gateway spreads throttling over many nodes.
 - At most 10 concurrent Lambda executions (the account quota; it leaves none to reserve).
 - DynamoDB provisioned at 25 read / 25 write units, the always-free allowance and a hard ceiling.
-- Logs kept 7 days; no VPC, NAT, custom domain or Route 53.
-- CloudFront is on the free flat-rate plan (no overage charges). The plan's WAF web ACL, is managed outside the stack: a per-IP rate rule (600 requests per 5 minutes), AWS's IP reputation list and the known-bad-inputs rules block; the common rule set only counts, because its 8 KB body limit would refuse maximum-size config saves; the stack only keeps it attached (`webAclArn` in `infra/cdk.json`).
+- Logs kept 7 days; no VPC, NAT or Route 53.
+- CloudFront is on the free flat-rate plan (no overage charges). The plan's WAF web ACL is managed outside the stack: a per-IP rate rule (600 requests per 5 minutes), AWS's IP reputation list and the known-bad-inputs rules block; the common rule set only counts, because its 8 KB body limit would refuse maximum-size config saves; the stack only keeps it attached (`webAclArn` in `infra/cdk.json`).
 - Kill switch (`flagship-kill-switch`): when actual monthly cost passes $1, it sets the API and live functions' concurrency to 0 and both API throttles to 0; the web page stays up. `npm run demo:stop` does the same by hand and `npm run demo:restore` undoes either (both need `aws sso login --profile flagship`).
 
 **Deploys:** every push to `main` deploys `Flagship` and `FlagshipKillSwitch` once CI's tests and browser tests pass (the `deploy` job in `.github/workflows/ci.yml`). It signs in through GitHub's OIDC token as `flagship-github-deploy`, a role only `main` of this repository can assume and that can only use the CDK bootstrap roles (`FlagshipGitHubDeploy` stack, deployed by hand). The alert email comes from the repository secret `ALERT_EMAIL`. A deploy doesn't reset the data.
@@ -195,7 +195,7 @@ By hand: `npm run build`, then from `infra/`: `npx cdk deploy <stack> --profile 
 |---|---|---|
 | API | `apps/api/test` | Engine, validation, services (permissions, audit, rollback, atomicity, overlapping writes), HTTP integration including the WebSocket; `dynamo-store.test.ts` covers the DynamoDB cache and concurrent instances; `aws.test.ts` the Lambda handlers, connection cap and reset |
 | MCP | `apps/mcp/test` | Every tool through the SDK client against a real in-process API: plan/apply binding, normalization, stale plans, Production refusal, failure modes. `stdio.test.ts` also starts the real server process over stdio, as Claude Code does. |
-| Infra | `infra/test` | The CDK stacks' guardrails: throttles, capacity, log retention, read-only Production, kill switch, nightly reset, no API caching, no fixed-cost resources |
+| Infra | `infra/test` | The CDK stacks' guardrails: throttles, capacity, log retention, read-only Production, kill switch, nightly reset, no API caching, no fixed-cost resources, the custom domain, and the GitHub deploy role's trust policy |
 | Web | `apps/web/test` | Live-update connection: backoff, reconnect, resync, dead-stream detection |
 | E2E | `e2e/*.spec.ts` | Real browser against the real app: live storefront updates, targeting, rollback, permissions, archiving in Production, the store flag counter, malformed storefront data, concurrent saves and conflicts, lost save responses, the Production review, rollback dialogs, recovery after an API restart |
 

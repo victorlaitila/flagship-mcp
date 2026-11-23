@@ -107,11 +107,11 @@ describe('Flagship stack guardrails', () => {
   }, 120_000);
 
   it('lets only pushes to main deploy, and only through the CDK roles', () => {
-    const github = Template.fromStack(new GitHubDeployStack(new App(), 'TestGitHub', { env, repository: 'owner/repo' }));
+    const github = Template.fromStack(new GitHubDeployStack(new App(), 'TestGitHub', { env, subjectPrefix: 'repo:owner@1/repo@2' }));
     github.hasResourceProperties('AWS::IAM::Role', {
       AssumeRolePolicyDocument: { Statement: [{
         Action: 'sts:AssumeRoleWithWebIdentity',
-        Condition: { StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com', 'token.actions.githubusercontent.com:sub': 'repo:owner/repo:ref:refs/heads/main' } },
+        Condition: { StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com', 'token.actions.githubusercontent.com:sub': 'repo:owner@1/repo@2:ref:refs/heads/main' } },
       }] },
     });
     const statements = Object.values(github.findResources('AWS::IAM::Policy')).flatMap((p) => p.Properties.PolicyDocument.Statement);

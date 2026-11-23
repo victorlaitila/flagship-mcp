@@ -3,8 +3,11 @@ import { OidcProviderNative, PolicyStatement, Role, WebIdentityPrincipal } from 
 import type { Construct } from 'constructs';
 
 export interface GitHubDeployStackProps extends StackProps {
-  /** `owner/name` of the repository allowed to deploy. */
-  repository: string;
+  /**
+   * The repository's OIDC subject prefix, in GitHub's immutable form `repo:<owner>@<owner id>/<name>@<repo id>`
+   * (`gh api repos/<owner>/<name>/actions/oidc/customization/sub`); the ids keep a renamed or re-created repo out.
+   */
+  subjectPrefix: string;
 }
 
 /**
@@ -25,7 +28,7 @@ export class GitHubDeployStack extends Stack {
         StringEquals: {
           'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
           // Pushes to main only: not pull requests, other branches, tags or forks.
-          'token.actions.githubusercontent.com:sub': `repo:${props.repository}:ref:refs/heads/main`,
+          'token.actions.githubusercontent.com:sub': `${props.subjectPrefix}:ref:refs/heads/main`,
         },
       }),
     });

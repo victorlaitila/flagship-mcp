@@ -6,7 +6,7 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 |---|---|---|
 | [1](#1-the-api-is-the-single-source-of-truth) | The API is the single source of truth | Accepted |
 | [2](#2-one-save-path-validate-persist-and-audit-in-one-transaction) | One save path: validate, persist and audit in one transaction | Accepted |
-| [3](#3-sqlite-in-a-single-process) | SQLite in a single process | Accepted |
+| [3](#3-sqlite-in-a-single-process) | SQLite in a single process | Accepted locally; superseded on AWS by #17 |
 | [4](#4-deterministic-evaluation-with-an-explicit-order) | Deterministic evaluation with an explicit order | Accepted |
 | [5](#5-simulated-identities-with-backend-enforced-permissions) | Simulated identities with backend-enforced permissions | Accepted |
 | [6](#6-append-only-audit-log-rollback-restores-a-full-snapshot) | Append-only audit log; rollback restores a full snapshot | Accepted |
@@ -20,6 +20,7 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 | [14](#14-guardrails-for-a-public-deployment-read-only-production-and-size-limits) | Guardrails for a public deployment: read-only Production and size limits | Accepted |
 | [15](#15-live-updates-over-websocket-with-client-side-pings) | Live updates over WebSocket, with client-side pings | Accepted |
 | [16](#16-dynamodb-store-one-table-a-global-revision-guard-and-a-cached-state) | DynamoDB store: one table, a global revision guard and a cached state | Accepted |
+| [17](#17-a-public-serverless-demo-on-aws-capped-by-throttles-and-a-budget-kill-switch) | A public serverless demo on AWS, capped by throttles and a budget kill switch | Accepted |
 
 ---
 
@@ -48,6 +49,8 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 **Consequences.** The audit log can't miss a change, and a failed write leaves no partial state. A listener failure after commit can't turn a saved change into an error. New write features must reuse this path (recorded in `CLAUDE.md`).
 
 ### 3. SQLite in a single process
+
+**Superseded on AWS by [17](#17-a-public-serverless-demo-on-aws-capped-by-throttles-and-a-budget-kill-switch);** still how Flagship runs locally and in tests.
 
 **Context.** The project must run locally with `npm install && npm run dev`, with no external services, and keep its data across restarts.
 
@@ -244,3 +247,21 @@ Key architecture decisions and why they were made. Each entry has four parts: **
 - *Reading the table on every request.* Rejected: evaluation reads every flag, which would quickly exceed the provisioned read capacity.
 
 **Consequences.** Any two overlapping writes conflict, even on unrelated flags. That's fine with one visitor at a time; a busy product would need finer guards. Filtered audit lists page through the newest entries without an index, which the nightly reset keeps cheap. `npm run test:dynamodb` runs the whole API suite on DynamoDB Local in Docker, in CI too.
+
+### 17. A public serverless demo on AWS, capped by throttles and a budget kill switch
+
+**Context.** Flagship is now a public demo, while decision 3 assumed one local process and decision 5 kept the API on `localhost`. The demo must cost cents a month, no visitor may be able to run up the bill, and local development must stay unchanged, with one codebase and no containers.
+
+**Decision.** `infra/` (AWS CDK) deploys the same API as Lambda functions (`apps/api/src/lambda.ts`) behind an HTTP API and a WebSocket API, on DynamoDB (decision 16), with the web app in S3 behind CloudFront. Without authentication it relies on decision 14's read-only Production and limits, plus a nightly reset of the data. Spending is capped in layers (`GUARDRAILS` in `infra/lib/flagship-stack.ts`, pinned by `infra/test/stack.test.ts`):
+- API Gateway throttles, provisioned DynamoDB capacity inside the free allowance, and the account's Lambda concurrency quota;
+- CloudFront's free flat-rate plan, whose WAF limits each IP address (the web ACL is managed outside the stack);
+- a $1 monthly budget whose alarm runs a kill switch (`FlagshipKillSwitch`, `infra/lambda/kill-switch.ts`) that sets the functions' concurrency and the API throttles to 0; `npm run demo:stop`/`demo:restore` do the same by hand.
+
+Pushes to `main` deploy from GitHub Actions after the tests pass, through an OIDC role that only `main` can assume (`infra/lib/github-deploy-stack.ts`).
+
+**Alternatives considered.**
+- *An always-on server or container (EC2, Fargate, App Runner).* Rejected: it costs dollars a month even when idle.
+- *On-demand DynamoDB, or a paid WAF web ACL.* Rejected: on-demand has no cost ceiling, and a WAF web ACL outside the free plan has a fixed monthly fee.
+- *AWS access keys stored in GitHub.* Rejected: long-lived secrets; OIDC credentials expire within an hour.
+
+**Consequences.** The worst case is about $1–2 in an attacked month, because budget data lags by hours. One visitor can exhaust the site-wide throttle or the 20 live connections, and anyone can vandalize Development and Staging until the nightly reset. The direct `execute-api` URLs bypass the WAF but not the throttles. Locally, Flagship still runs as one process on SQLite.

@@ -5,6 +5,8 @@ How Flagship works and how to use it: from the dashboard, the demo storefront an
 - **Dashboard:** http://localhost:5173
 - **Storefront:** http://localhost:5173/store
 
+Or use the public demo at https://flagship.victorlaitila.com (storefront at `/store`), where Production is read-only and the data is reset every night.
+
 Everything below uses the seeded demo data. `npm run db:reset` restores it.
 
 ## The idea in one minute
