@@ -1,5 +1,6 @@
 import { App, Tags } from 'aws-cdk-lib';
 import { FlagshipStack } from '../lib/flagship-stack.js';
+import { GitHubDeployStack } from '../lib/github-deploy-stack.js';
 import { KillSwitchStack } from '../lib/kill-switch-stack.js';
 
 const app = new App();
@@ -21,4 +22,6 @@ new FlagshipStack(app, 'Flagship', {
   domain: domainName && certificateArn ? { name: domainName, certificateArn } : undefined,
 });
 new KillSwitchStack(app, 'FlagshipKillSwitch', { env: { account, region: 'us-east-1' }, appRegion: region, alertEmail, reservedConcurrency });
+// Deployed by hand (`cdk deploy FlagshipGitHubDeploy`); CI deploys only the two stacks above.
+new GitHubDeployStack(app, 'FlagshipGitHubDeploy', { env: { account, region }, repository: 'victorlaitila/flagship-mcp' });
 Tags.of(app).add('project', 'flagship');

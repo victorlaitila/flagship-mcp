@@ -5,6 +5,7 @@ import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { FlagshipStack } from '../lib/flagship-stack.js';
+import { GitHubDeployStack } from '../lib/github-deploy-stack.js';
 import { KillSwitchStack } from '../lib/kill-switch-stack.js';
 
 // These pin the cost and abuse guardrails: loosening one should be a deliberate change to this test.
@@ -104,4 +105,16 @@ describe('Flagship stack guardrails', () => {
     expect(config.Aliases).toEqual(['flagship.example.com']);
     expect(config.ViewerCertificate).toMatchObject({ AcmCertificateArn: certificateArn, SslSupportMethod: 'sni-only' });
   }, 120_000);
+
+  it('lets only pushes to main deploy, and only through the CDK roles', () => {
+    const github = Template.fromStack(new GitHubDeployStack(new App(), 'TestGitHub', { env, repository: 'owner/repo' }));
+    github.hasResourceProperties('AWS::IAM::Role', {
+      AssumeRolePolicyDocument: { Statement: [{
+        Action: 'sts:AssumeRoleWithWebIdentity',
+        Condition: { StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com', 'token.actions.githubusercontent.com:sub': 'repo:owner/repo:ref:refs/heads/main' } },
+      }] },
+    });
+    const statements = Object.values(github.findResources('AWS::IAM::Policy')).flatMap((p) => p.Properties.PolicyDocument.Statement);
+    expect(statements).toEqual([expect.objectContaining({ Action: ['sts:AssumeRole', 'sts:TagSession'], Resource: 'arn:aws:iam::111111111111:role/cdk-hnb659fds-*' })]);
+  });
 });

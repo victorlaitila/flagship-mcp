@@ -185,7 +185,9 @@ Guardrails are in `GUARDRAILS` (`infra/lib/flagship-stack.ts`) and pinned by `in
 - CloudFront is on the free flat-rate plan (no overage charges). The plan's WAF web ACL, is managed outside the stack: a per-IP rate rule (600 requests per 5 minutes), AWS's IP reputation list and the known-bad-inputs rules block; the common rule set only counts, because its 8 KB body limit would refuse maximum-size config saves; the stack only keeps it attached (`webAclArn` in `infra/cdk.json`).
 - Kill switch (`flagship-kill-switch`): when actual monthly cost passes $1, it sets the API and live functions' concurrency to 0 and both API throttles to 0; the web page stays up. `npm run demo:stop` does the same by hand and `npm run demo:restore` undoes either (both need `aws sso login --profile flagship`).
 
-Deploying by hand: `npm run build`, then from `infra/`: `npx cdk deploy --all --profile flagship -c alertEmail=<email>`. After the first deploy, invoke the `reset` function once to seed the table.
+**Deploys:** every push to `main` deploys `Flagship` and `FlagshipKillSwitch` once CI's tests and browser tests pass (the `deploy` job in `.github/workflows/ci.yml`). It signs in through GitHub's OIDC token as `flagship-github-deploy`, a role only `main` of this repository can assume and that can only use the CDK bootstrap roles (`FlagshipGitHubDeploy` stack, deployed by hand). The alert email comes from the repository secret `ALERT_EMAIL`. A deploy doesn't reset the data.
+
+By hand: `npm run build`, then from `infra/`: `npx cdk deploy <stack> --profile flagship -c alertEmail=<email>`. A new table needs one invocation of the `reset` function to be seeded.
 
 ## Tests
 
@@ -201,7 +203,7 @@ Playwright starts its own API (port 4100, throwaway database) and web server (51
 
 `npm run test:dynamodb -w @flagship/api` runs the whole API suite again on DynamoDB Local, in a throwaway Docker container on a random port (needs Docker running). Each test gets a fresh table.
 
-CI (`.github/workflows/ci.yml`) runs the build, all three Vitest suites and the DynamoDB run in one job and Playwright in another, on every push to `main` and every pull request.
+CI (`.github/workflows/ci.yml`) runs the build, the Vitest suites and the DynamoDB run in one job and Playwright in another, on every push to `main` and every pull request; on `main` a third job then deploys (see Deployment).
 
 ## Other limitations
 

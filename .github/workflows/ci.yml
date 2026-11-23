@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Never on main: a cancelled run could stop a deploy halfway.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check:
@@ -39,3 +40,33 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  deploy:
+    name: Deploy to AWS
+    needs: [check, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # GitHub's OIDC token, exchanged for the deploy role (infra/lib/github-deploy-stack.ts)
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    # Actions pinned to commits: this job can deploy to AWS.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::612468269152:role/flagship-github-deploy
+          aws-region: eu-north-1
+      - name: cdk deploy
+        working-directory: infra
+        env:
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: npx cdk deploy Flagship FlagshipKillSwitch --require-approval never -c alertEmail="$ALERT_EMAIL"
