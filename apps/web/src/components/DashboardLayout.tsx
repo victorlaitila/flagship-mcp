@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { useActor } from '../hooks/useActor';
 import { useLiveStatus } from '../hooks/useLive';
+import { Logo } from './Logo';
 import { Banner, cx, EnvLabel } from './ui';
 
 const NAV = [
@@ -52,9 +53,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col gap-6 p-4">
       <div className="flex items-center gap-2 px-1.5">
-        <div className="grid size-7 place-items-center rounded-md bg-accent/15 ring-1 ring-accent/30">
-          <Flag className="size-3.5 text-accent" strokeWidth={2.5} />
-        </div>
+        <Logo className="size-7" />
         <span className="font-semibold tracking-tight">Flagship</span>
       </div>
       <nav className="flex flex-col gap-0.5">
@@ -155,7 +154,7 @@ export function DashboardLayout() {
         <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
       </aside>
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-canvas/90 px-4 py-2.5 backdrop-blur lg:hidden">
-        <span className="flex items-center gap-2 font-semibold"><Flag className="size-4 text-accent" /> Flagship</span>
+        <span className="flex items-center gap-2 font-semibold"><Logo className="size-5" /> Flagship</span>
         <button onClick={() => setOpen(true)} className="rounded p-1.5 text-muted hover:bg-raised" aria-label="Open menu"><Menu className="size-5" /></button>
       </header>
       {open && (

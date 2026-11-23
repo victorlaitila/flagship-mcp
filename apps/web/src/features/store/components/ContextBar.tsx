@@ -1,5 +1,6 @@
 import { ENVIRONMENT_LABELS, ENVIRONMENTS, type Environment } from '@flagship/shared';
-import { ArrowUpRight, ChevronDown, Flag, User } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, User } from 'lucide-react';
+import { Logo } from '../../../components/Logo';
 import { Link } from 'react-router';
 import { useLiveStatus } from '../../../hooks/useLive';
 import { useStore } from '../StoreContext';
@@ -29,7 +30,7 @@ export function ContextBar() {
     <div className="border-b border-stone-800 bg-stone-900 text-stone-300">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-xs sm:px-6">
         <span className="inline-flex items-center gap-1.5 font-medium text-stone-100">
-          <Flag className="size-3.5 text-emerald-400" /> Flagship demo
+          <Logo className="size-4" /> Flagship demo
         </span>
 
         <label className="relative inline-flex min-w-0 items-center" title={user.description}>
