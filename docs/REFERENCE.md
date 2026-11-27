@@ -169,6 +169,8 @@ Locally, the API listens on `localhost` only (see [decision 5](DECISIONS.md#5-si
 
 ## Deployment (AWS)
 
+Diagram: [Architecture](ARCHITECTURE.md#the-aws-deployment).
+
 The public demo runs at https://flagship.victorlaitila.com from `infra/` (AWS CDK) in the dedicated `flagship` account; the account and regions are pinned in `infra/bin/flagship.ts`. The domain's DNS is at Cloudflare: a `flagship` CNAME to the CloudFront domain and the certificate's validation CNAME, both **DNS only** (proxied, CloudFront's per-IP limit would see Cloudflare's addresses). The certificate (ACM, us-east-1) and domain are set in `infra/cdk.json`.
 
 | Stack | Region | Contents |

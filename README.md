@@ -29,6 +29,7 @@ To drive it with Claude Code, keep `npm run dev` running and start `claude` in t
 | Document | Read it to… |
 |---|---|
 | [Guide](docs/GUIDE.md) | Learn how Flagship works and try it: walkthroughs in the dashboard, storefront and Claude Code, and what you'll see. |
+| [Architecture](docs/ARCHITECTURE.md) | See how the parts fit together: the AWS deployment, a change end to end, and the write path, as diagrams. |
 | [Design decisions](docs/DECISIONS.md) | Understand the key architecture choices and their trade-offs. |
 | [Reference](docs/REFERENCE.md) | Look up precise details: evaluation rules, permissions, API, MCP tools, configuration, tests. |
 

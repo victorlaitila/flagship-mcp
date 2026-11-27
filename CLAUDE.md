@@ -64,6 +64,7 @@ Update the matching document in the same change as the code. A task isn't comple
 | `README.md` | Setup, commands, project layout or top-level limitations change. Keep it short; details belong in `docs/`. |
 | `docs/GUIDE.md` | User-visible behaviour changes (dashboard, storefront, MCP workflow). Keep its examples true to the seeded data. |
 | `docs/REFERENCE.md` | Evaluation rules, permissions, API endpoints, MCP tools, configuration or test setup change. |
+| `docs/ARCHITECTURE.md` | A change alters what a diagram shows: AWS resources or routing (`infra/`), the request or live-update flow, or the write path's order of checks. Propose the diagram update with the change. |
 | `docs/DECISIONS.md` | An architectural decision is made or reversed. Use the `adr` skill; add a new entry rather than rewriting an old one. |
 
 Document only what exists; don't create overlapping documents.
