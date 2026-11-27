@@ -27,19 +27,19 @@ export function ContextBar() {
     : live === 'connected' ? 'live' : live;
 
   return (
-    <div className="border-b border-stone-800 bg-stone-900 text-stone-300">
+    <div className="border-b border-line bg-surface font-sans text-muted">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-xs sm:px-6">
-        <span className="inline-flex items-center gap-1.5 font-medium text-stone-100">
+        <span className="inline-flex items-center gap-1.5 font-medium text-fg">
           <Logo className="size-4" /> Flagship demo
         </span>
 
         <label className="relative inline-flex min-w-0 items-center" title={user.description}>
           <span className="sr-only">Demo customer</span>
-          <User className="pointer-events-none absolute left-2 size-3.5 text-stone-400" />
+          <User className="pointer-events-none absolute left-2 size-3.5 text-muted" />
           <select
             value={user.userId}
             onChange={(e) => setUserId(e.target.value)}
-            className="max-w-[16rem] appearance-none truncate rounded-md border border-stone-700 bg-stone-800 py-1 pl-7 pr-7 text-stone-100 transition hover:border-stone-600 focus:border-emerald-500 focus:outline-none"
+            className="max-w-[16rem] appearance-none truncate rounded-md border border-line-strong bg-raised py-1 pl-7 pr-7 text-fg transition hover:border-faint focus:border-accent focus:outline-none"
           >
             {users.map((u) => (
               <option key={u.userId} value={u.userId}>
@@ -47,10 +47,10 @@ export function ContextBar() {
               </option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-2.5 size-3.5 text-stone-400" />
+          <ChevronDown className="pointer-events-none absolute right-2.5 size-3.5 text-muted" />
         </label>
 
-        <div role="radiogroup" aria-label="Environment" className="inline-flex rounded-md border border-stone-700 bg-stone-800 p-0.5">
+        <div role="radiogroup" aria-label="Environment" className="inline-flex rounded-md border border-line-strong bg-raised p-0.5">
           {ENVIRONMENTS.map((env) => (
             <button
               key={env}
@@ -59,7 +59,7 @@ export function ContextBar() {
               aria-checked={env === environment}
               onClick={() => setEnvironment(env)}
               className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 transition ${
-                env === environment ? 'bg-stone-100 font-medium text-stone-900' : 'text-stone-400 hover:text-stone-100'
+                env === environment ? 'bg-primary font-medium text-on-primary' : 'text-muted hover:text-fg'
               }`}
             >
               <span className={`size-1.5 rounded-full ${ENV_DOT[env]}`} />
@@ -68,16 +68,16 @@ export function ContextBar() {
           ))}
         </div>
 
-        <span className="inline-flex items-center gap-1.5 text-stone-400">
+        <span className="inline-flex items-center gap-1.5 text-muted">
           <span
             className={`size-1.5 rounded-full ${
-              status === 'live' ? 'bg-emerald-400' : status === 'loading' ? 'animate-pulse bg-stone-400' : 'bg-amber-400'
+              status === 'live' ? 'bg-on' : status === 'loading' ? 'animate-pulse bg-faint' : 'bg-staging'
             }`}
           />
           {STATUS_LABELS[status]}
         </span>
 
-        <Link to="/" className="ml-auto inline-flex items-center gap-1 text-stone-400 transition hover:text-stone-100">
+        <Link to="/" className="ml-auto inline-flex items-center gap-1 text-muted transition hover:text-fg">
           Dashboard <ArrowUpRight className="size-3.5" />
         </Link>
       </div>

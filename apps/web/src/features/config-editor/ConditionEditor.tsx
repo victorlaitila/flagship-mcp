@@ -109,7 +109,7 @@ export function ConditionsEditor({ conditions, onChange, segments, allowSegment,
     <div className="space-y-2">
       {conditions.map((c, i) => (
         <div key={i}>
-          {i > 0 && <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">and</div>}
+          {i > 0 && <div className="mb-2 text-xs font-medium text-faint">and</div>}
           <ConditionRow
             condition={c}
             segments={segments}

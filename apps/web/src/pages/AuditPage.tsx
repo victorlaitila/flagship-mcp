@@ -24,7 +24,7 @@ export function AuditPage() {
 
   return (
     <div>
-      <PageHeader title="Activity" description="Every configuration change, newest first. Expand an entry to compare before and after, or roll it back." />
+      <PageHeader title="Activity" description="Every change, newest first. Open an entry to compare before and after, or to roll it back." />
       <div className="mb-4 flex flex-wrap gap-2">
         <Select className="w-auto!" value={flagKey} onChange={(e) => setFilter('flagKey', e.target.value)} aria-label="Flag">
           <option value="">All flags</option>

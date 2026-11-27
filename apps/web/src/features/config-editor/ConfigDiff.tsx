@@ -8,7 +8,7 @@ const isConfig = (v: unknown): v is EnvironmentConfig =>
 function Column({ title, value, changed, tone }: { title: string; value: unknown; changed: Set<string>; tone: 'old' | 'new' }) {
   return (
     <div className="min-w-0 space-y-2">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-faint">{title}</div>
+      <div className="text-xs font-medium text-faint">{title}</div>
       {value === null || value === undefined ? (
         <p className="text-sm text-faint">—</p>
       ) : isConfig(value) ? (

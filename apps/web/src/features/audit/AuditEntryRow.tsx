@@ -161,8 +161,9 @@ export function AuditEntryRow({ entry, showFlag = true }: { entry: AuditEntry; s
             {entry.environment && <EnvLabel env={entry.environment} />}
             {entry.rollbackOf && <span className="text-[11px] text-faint">of #{entry.rollbackOf}</span>}
           </div>
-          <div className="mt-0.5 text-[11px] text-faint">
-            {entry.actorName} · {ROLE_LABELS[entry.actorRole]} · <span title={dateTime(entry.timestamp)}>{relativeTime(entry.timestamp)}</span>
+          <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-faint">
+            <span>{entry.actorName}, {ROLE_LABELS[entry.actorRole]}</span>
+            <span title={dateTime(entry.timestamp)}>{relativeTime(entry.timestamp)}</span>
           </div>
         </div>
         <span className="hidden font-mono text-[11px] text-faint sm:block">#{entry.id}</span>
@@ -173,7 +174,7 @@ export function AuditEntryRow({ entry, showFlag = true }: { entry: AuditEntry; s
           <div className="flex items-center gap-2">
             {rollbackable && <RollbackButton entry={entry} />}
             {showFlag && entry.flagKey && entry.operation !== 'flag.archived' && (
-              <Link to={`/flags/${entry.flagKey}${entry.environment ? `?env=${entry.environment}` : ''}`} className="text-xs text-accent hover:underline">Open flag →</Link>
+              <Link to={`/flags/${entry.flagKey}${entry.environment ? `?env=${entry.environment}` : ''}`} className="text-xs text-accent hover:underline">Open flag</Link>
             )}
           </div>
         </div>

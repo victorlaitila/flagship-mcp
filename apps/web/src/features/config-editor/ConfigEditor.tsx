@@ -10,18 +10,29 @@ import {
 } from '@flagship/shared';
 import { Eye, Lock, ShieldAlert, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Badge, Banner, Button, cx, Input, Modal, Select, Toggle } from '../../components/ui';
+import { Badge, Banner, Button, cx, Fold, Input, Modal, Select, Toggle } from '../../components/ui';
 import { api, ApiError } from '../../lib/api';
 import { ConfigDiff } from './ConfigDiff';
 import { RulesEditor } from './RulesEditor';
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+/** An editor section. With `fold`, it collapses to a one-line summary (for sections that are often empty). */
+function Section({ title, description, fold, children }: { title: string; description?: string; fold?: { open: boolean; summary: string }; children: ReactNode }) {
+  if (fold) {
+    return (
+      <Fold title={title} summary={fold.summary} open={fold.open} className="border-t border-line first:border-t-0" summaryClassName="px-4 py-3.5">
+        <div className="space-y-3 px-4 pb-4">
+          {description && <p className="text-xs text-faint">{description}</p>}
+          {children}
+        </div>
+      </Fold>
+    );
+  }
   return (
     <section className="space-y-3 border-t border-line px-4 py-4 first:border-t-0">
       <div>
-        <h3 className="text-[13px] font-semibold">{title}</h3>
+        <h3 className="text-sm font-semibold">{title}</h3>
         {description && <p className="mt-0.5 text-xs text-faint">{description}</p>}
       </div>
       {children}
@@ -328,11 +339,19 @@ export function ConfigEditor({ flag, environment, persisted, flags, segments, lo
         </Section>
       )}
 
-      <Section title="Targeting rules" description="Exclusions take precedence over inclusions and the rollout.">
+      <Section
+        title="Targeting rules"
+        description="Exclusions take precedence over inclusions and the rollout."
+        fold={{ open: base.rules.length > 0, summary: draft.rules.length ? `${draft.rules.length} ${draft.rules.length === 1 ? 'rule' : 'rules'}` : 'None' }}
+      >
         <RulesEditor flag={flag} rules={draft.rules} segments={segments} disabled={disabled} onChange={(rules) => edit({ rules })} />
       </Section>
 
-      <Section title="Prerequisites" description="Flags that must be enabled for the same user in this environment.">
+      <Section
+        title="Prerequisites"
+        description="Flags that must be enabled for the same user in this environment."
+        fold={{ open: base.prerequisites.length > 0, summary: draft.prerequisites.length ? draft.prerequisites.join(', ') : 'None' }}
+      >
         <PrerequisitesEditor flag={flag} value={draft.prerequisites} flags={flags} disabled={disabled} onChange={(prerequisites) => edit({ prerequisites })} />
       </Section>
 

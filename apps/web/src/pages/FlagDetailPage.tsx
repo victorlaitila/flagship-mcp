@@ -13,14 +13,15 @@ import {
 import { Archive, ArchiveRestore, ChevronLeft, Pencil, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { Badge, Button, cx, EmptyState, EnvLabel, ErrorState, Field, Input, Loading, Modal, Panel, StatusPill } from '../components/ui';
+import { Badge, Button, cx, EmptyState, envDotClass, EnvLabel, ErrorState, Field, Fold, Input, Loading, Modal, Panel, StatusPill } from '../components/ui';
 import { AuditEntryRow } from '../features/audit/AuditEntryRow';
 import { ConfigEditor } from '../features/config-editor/ConfigEditor';
 import { CurrentEvaluations, PreviewEvaluations } from '../features/config-editor/EvaluationTable';
 import { useActor } from '../hooks/useActor';
 import { useLiveResource } from '../hooks/useLive';
 import { api, ApiError } from '../lib/api';
-import { relativeTime } from '../lib/format';
+import { servingSummary } from '../lib/describe';
+import { dateTime, relativeTime } from '../lib/format';
 
 function EditDetailsModal({ flag, open, onClose }: { flag: FlagWithConfigs; open: boolean; onClose: () => void }) {
   const [form, setForm] = useState({ name: flag.name, description: flag.description, owner: flag.owner, tags: flag.tags.join(', ') });
@@ -90,13 +91,16 @@ function FlagHeader({ flag }: { flag: FlagWithConfigs }) {
             {flag.status === 'archived' && <Badge tone="danger">Archived</Badge>}
           </div>
           <div className="font-mono text-xs text-muted">{flag.key}</div>
-          <p className="max-w-2xl text-sm text-muted">{flag.description}</p>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-faint">
-            <span>Owner <span className="text-fg">{flag.owner}</span></span>
-            <span>Created {relativeTime(flag.createdAt)}</span>
-            <span>Modified {relativeTime(flag.updatedAt)}</span>
-            <span className="flex flex-wrap gap-1">{flag.tags.map((t) => <Badge key={t}>{t}</Badge>)}</span>
-          </div>
+          {flag.description && <p className="max-w-2xl text-sm text-muted">{flag.description}</p>}
+          <Fold title={<span className="text-xs font-medium text-muted">Details</span>} summaryClassName="py-1 w-fit">
+            <dl className="mt-1 grid max-w-md grid-cols-[6rem_1fr] gap-x-4 gap-y-1.5 pl-5.5 text-xs">
+              <dt className="text-faint">Owner</dt><dd>{flag.owner}</dd>
+              <dt className="text-faint">Created</dt><dd title={dateTime(flag.createdAt)}>{relativeTime(flag.createdAt)}</dd>
+              <dt className="text-faint">Edited</dt><dd title={dateTime(flag.updatedAt)}>{relativeTime(flag.updatedAt)}</dd>
+              <dt className="text-faint">Tags</dt>
+              <dd className="flex flex-wrap gap-1">{flag.tags.length ? flag.tags.map((t) => <Badge key={t}>{t}</Badge>) : <span className="text-faint">None</span>}</dd>
+            </dl>
+          </Fold>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => setEditing(true)}><Pencil className="size-3.5" /> Edit details</Button>
@@ -146,7 +150,7 @@ function EvaluationPanel({ flag, environment, preview }: { flag: FlagWithConfigs
     );
   }
   return (
-    <Panel title="Current evaluation · demo users" bodyClassName="">
+    <Panel title="Demo users right now" bodyClassName="">
       {evaluations.error ? <div className="p-4"><ErrorState error={evaluations.error} onRetry={evaluations.reload} /></div>
         : !evaluations.data ? <Loading />
         : <CurrentEvaluations rows={evaluations.data} />}
@@ -157,12 +161,17 @@ function EvaluationPanel({ flag, environment, preview }: { flag: FlagWithConfigs
 function RecentChanges({ flagKey }: { flagKey: string }) {
   const audit = useLiveResource(() => api.audit({ flagKey, limit: 8 }), [flagKey]);
   return (
-    <Panel title="Recent changes" bodyClassName="" actions={<Link to={`/audit?flagKey=${flagKey}`} className="text-xs text-accent hover:underline">All activity</Link>}>
-      {audit.error ? <div className="p-4"><ErrorState error={audit.error} /></div>
-        : !audit.data ? <Loading />
-        : audit.data.length === 0 ? <EmptyState title="No changes yet" />
-        : <ul className="divide-y divide-line">{audit.data.map((e) => <AuditEntryRow key={e.id} entry={e} showFlag={false} />)}</ul>}
-    </Panel>
+    <section className="rounded-lg border border-line bg-surface">
+      <Fold title="Recent changes" summary={audit.data && (audit.data.length ? `Last ${relativeTime(audit.data[0].timestamp)}` : 'None yet')}>
+        <div className="border-t border-line">
+          {audit.error ? <div className="p-4"><ErrorState error={audit.error} /></div>
+            : !audit.data ? <Loading />
+            : audit.data.length === 0 ? <EmptyState title="No changes yet" />
+            : <ul className="divide-y divide-line">{audit.data.map((e) => <AuditEntryRow key={e.id} entry={e} showFlag={false} />)}</ul>}
+          <Link to={`/audit?flagKey=${flagKey}`} className="block border-t border-line px-4 py-2.5 text-xs text-accent hover:underline">All activity for this flag</Link>
+        </div>
+      </Fold>
+    </section>
   );
 }
 
@@ -183,27 +192,34 @@ export function FlagDetailPage() {
   return (
     <div>
       <FlagHeader flag={flag} />
-      <div role="tablist" className="mb-4 flex gap-1 overflow-x-auto border-b border-line">
-        {ENVIRONMENTS.map((env) => (
-          <button
-            key={env}
-            role="tab"
-            aria-selected={env === environment}
-            onClick={() => {
-              setPreview(null);
-              setParams({ env }, { replace: true });
-            }}
-            className={cx(
-              '-mb-px flex shrink-0 items-center gap-3 whitespace-nowrap border-b-2 px-3 py-2 transition-colors',
-              env === environment ? 'border-accent' : 'border-transparent opacity-70 hover:opacity-100',
-            )}
-          >
-            <EnvLabel env={env} />
-            <StatusPill on={flag.environments[env].enabled && flag.status === 'active'} />
-          </button>
-        ))}
+      <div role="tablist" aria-label="Environment" className="mb-6 grid grid-cols-3 overflow-hidden rounded-lg border border-line bg-surface">
+        {ENVIRONMENTS.map((env) => {
+          const config = flag.environments[env];
+          const on = config.enabled && flag.status === 'active';
+          const summary = on ? servingSummary(config) : null;
+          const selected = env === environment;
+          return (
+            <button
+              key={env}
+              role="tab"
+              aria-selected={selected}
+              onClick={() => {
+                setPreview(null);
+                setParams({ env }, { replace: true });
+              }}
+              className={cx(
+                'relative flex min-w-0 flex-col items-start gap-1 border-l border-line px-3 py-3 text-left transition-colors first:border-l-0 sm:px-4',
+                selected ? 'bg-raised' : 'hover:bg-raised/40',
+              )}
+            >
+              <span className={cx('absolute inset-x-0 top-0 h-0.5', envDotClass(env), !selected && 'opacity-30')} />
+              <EnvLabel env={env} />
+              <StatusPill on={on} label={on ? `On${summary ? `, ${summary}` : ''}` : 'Off'} />
+            </button>
+          );
+        })}
       </div>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <ConfigEditor
           key={`${flag.key}:${environment}`}
           flag={flag}

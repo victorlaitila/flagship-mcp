@@ -8,13 +8,12 @@ import {
   type FlagWithConfigs,
   type ValidationIssue,
 } from '@flagship/shared';
-import { Plus, Search, X } from 'lucide-react';
+import { ListFilter, Plus, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Badge, Button, EmptyState, ErrorState, Field, Input, Loading, Modal, PageHeader, Select, StatusPill } from '../components/ui';
+import { Badge, Button, cx, EmptyState, EnvLabel, EnvStrip, ErrorState, Field, Input, Loading, Modal, PageHeader, Select } from '../components/ui';
 import { useLiveResource } from '../hooks/useLive';
 import { api, ApiError } from '../lib/api';
-import { servingSummary } from '../lib/describe';
 import { relativeTime } from '../lib/format';
 
 interface Filters {
@@ -40,19 +39,6 @@ function matches(flag: FlagWithConfigs, f: Filters): boolean {
     if ((f.state === 'on') !== on) return false;
   }
   return true;
-}
-
-function EnvCell({ flag, env, highlight }: { flag: FlagWithConfigs; env: Environment; highlight: boolean }) {
-  const config = flag.environments[env];
-  const summary = servingSummary(config);
-  return (
-    <td className={`px-3 py-3 ${highlight ? 'bg-accent/5' : ''}`}>
-      <div className="flex flex-col gap-0.5">
-        <StatusPill on={config.enabled && flag.status === 'active'} />
-        {summary && config.enabled && <span className="font-mono text-[11px] text-faint">{summary}</span>}
-      </div>
-    </td>
-  );
 }
 
 function CreateFlagModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -122,6 +108,9 @@ export function FlagsPage() {
   const visible = useMemo(() => flags.data?.filter((f) => matches(f, filters)) ?? [], [flags.data, filters]);
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setFilters((f) => ({ ...f, [k]: v }));
   const filtered = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS);
+  // Search and lifecycle stay visible; the rest is behind "Filters" and counted on the button.
+  const extraFilters = [filters.environment, filters.state, filters.type, filters.owner].filter(Boolean).length;
+  const [showFilters, setShowFilters] = useState(false);
 
   return (
     <div>
@@ -130,46 +119,62 @@ export function FlagsPage() {
         description="All flags and their state in each environment."
         actions={<Button variant="primary" onClick={() => setCreating(true)}><Plus className="size-4" /> New flag</Button>}
       />
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative w-full sm:w-64">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
-          <Input value={filters.search} onChange={(e) => set('search', e.target.value)} placeholder="Search name, key or tag" className="pl-8" />
+      <div className="mb-4 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full sm:w-72">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
+            <Input value={filters.search} onChange={(e) => set('search', e.target.value)} placeholder="Search name, key or tag" className="pl-8" />
+          </div>
+          <Select className="w-auto!" value={filters.lifecycle} onChange={(e) => set('lifecycle', e.target.value as Filters['lifecycle'])} aria-label="Lifecycle">
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+            <option value="">Active & archived</option>
+          </Select>
+          <Button variant={showFilters || extraFilters ? 'secondary' : 'ghost'} onClick={() => setShowFilters(!showFilters)} aria-expanded={showFilters}>
+            <ListFilter className="size-3.5" /> Filters
+            {extraFilters > 0 && <span className="rounded bg-accent/15 px-1.5 text-xs font-semibold text-accent">{extraFilters}</span>}
+          </Button>
+          {filtered && <Button variant="ghost" size="sm" onClick={() => setFilters(EMPTY_FILTERS)}><X className="size-3.5" /> Reset</Button>}
         </div>
-        <Select className="w-auto!" value={filters.environment} onChange={(e) => set('environment', e.target.value as Filters['environment'])} aria-label="Environment">
-          <option value="">Any environment</option>
-          {ENVIRONMENTS.map((e) => <option key={e} value={e}>{ENVIRONMENT_LABELS[e]}</option>)}
-        </Select>
-        <Select className="w-auto!" value={filters.state} onChange={(e) => set('state', e.target.value as Filters['state'])} aria-label="Enabled state">
-          <option value="">On or off</option>
-          <option value="on">Enabled</option>
-          <option value="off">Disabled</option>
-        </Select>
-        <Select className="w-auto!" value={filters.type} onChange={(e) => set('type', e.target.value as Filters['type'])} aria-label="Type">
-          <option value="">All types</option>
-          {FLAG_TYPES.map((t) => <option key={t} value={t}>{FLAG_TYPE_LABELS[t]}</option>)}
-        </Select>
-        <Select className="w-auto!" value={filters.lifecycle} onChange={(e) => set('lifecycle', e.target.value as Filters['lifecycle'])} aria-label="Lifecycle">
-          <option value="active">Active</option>
-          <option value="archived">Archived</option>
-          <option value="">Active & archived</option>
-        </Select>
-        <Select className="w-auto!" value={filters.owner} onChange={(e) => set('owner', e.target.value)} aria-label="Owner">
-          <option value="">All owners</option>
-          {owners.map((o) => <option key={o} value={o}>{o}</option>)}
-        </Select>
-        {filtered && <Button variant="ghost" size="sm" onClick={() => setFilters(EMPTY_FILTERS)}><X className="size-3.5" /> Reset</Button>}
+        {showFilters && (
+          <div className="flex flex-wrap items-center gap-2 animate-fade-in">
+            <Select className="w-auto!" value={filters.environment} onChange={(e) => set('environment', e.target.value as Filters['environment'])} aria-label="Environment">
+              <option value="">Any environment</option>
+              {ENVIRONMENTS.map((e) => <option key={e} value={e}>{ENVIRONMENT_LABELS[e]}</option>)}
+            </Select>
+            <Select className="w-auto!" value={filters.state} onChange={(e) => set('state', e.target.value as Filters['state'])} aria-label="Enabled state">
+              <option value="">On or off</option>
+              <option value="on">Enabled</option>
+              <option value="off">Disabled</option>
+            </Select>
+            <Select className="w-auto!" value={filters.type} onChange={(e) => set('type', e.target.value as Filters['type'])} aria-label="Type">
+              <option value="">All types</option>
+              {FLAG_TYPES.map((t) => <option key={t} value={t}>{FLAG_TYPE_LABELS[t]}</option>)}
+            </Select>
+            <Select className="w-auto!" value={filters.owner} onChange={(e) => set('owner', e.target.value)} aria-label="Owner">
+              <option value="">All owners</option>
+              {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+            </Select>
+          </div>
+        )}
       </div>
 
       {flags.error ? <ErrorState error={flags.error} onRetry={flags.reload} /> : !flags.data ? <Loading /> : (
         <div className="overflow-x-auto rounded-lg border border-line bg-surface">
-          <table className="w-full min-w-[860px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
-              <tr className="border-b border-line text-left text-[11px] font-medium uppercase tracking-wider text-faint">
+              <tr className="border-b border-line text-left text-xs text-faint">
                 <th className="px-4 py-2.5 font-medium">Flag</th>
-                <th className="px-3 py-2.5 font-medium">Type</th>
                 <th className="px-3 py-2.5 font-medium">Owner</th>
-                {ENVIRONMENTS.map((e) => <th key={e} className="px-3 py-2.5 font-medium">{ENVIRONMENT_LABELS[e]}</th>)}
-                <th className="px-3 py-2.5 font-medium">Modified</th>
+                <th className="px-3 py-2.5 font-medium">
+                  <span className="sr-only">State per environment</span>
+                  <span aria-hidden className="grid w-60 grid-cols-3">
+                    {ENVIRONMENTS.map((e) => (
+                      <span key={e} className={cx('justify-self-center', filters.environment === e && 'text-fg')}><EnvLabel env={e} short /></span>
+                    ))}
+                  </span>
+                </th>
+                <th className="px-3 py-2.5 font-medium">Edited</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -180,13 +185,15 @@ export function FlagsPage() {
                       <div className="flex items-center gap-2 font-medium text-fg group-hover:text-accent-strong">
                         {flag.name} {flag.status === 'archived' && <Badge tone="danger">Archived</Badge>}
                       </div>
-                      <div className="font-mono text-[11px] text-faint">{flag.key}</div>
+                      <div className="flex flex-wrap gap-x-3 text-xs text-faint">
+                        <span className="font-mono">{flag.key}</span>
+                        <span>{FLAG_TYPE_LABELS[flag.type]}</span>
+                      </div>
                     </Link>
                   </td>
-                  <td className="px-3 py-3 text-xs text-muted">{FLAG_TYPE_LABELS[flag.type]}</td>
                   <td className="px-3 py-3 text-xs text-muted wrap-anywhere">{flag.owner}</td>
-                  {ENVIRONMENTS.map((e) => <EnvCell key={e} flag={flag} env={e} highlight={filters.environment === e} />)}
-                  <td className="px-3 py-3 text-xs text-faint">{relativeTime(flag.updatedAt)}</td>
+                  <td className="px-3 py-3"><EnvStrip flag={flag} highlight={filters.environment} /></td>
+                  <td className="px-3 py-3 text-xs whitespace-nowrap text-faint">{relativeTime(flag.updatedAt)}</td>
                 </tr>
               ))}
             </tbody>

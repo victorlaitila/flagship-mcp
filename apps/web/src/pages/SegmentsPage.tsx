@@ -149,7 +149,7 @@ export function SegmentsPage() {
     <div>
       <PageHeader
         title="Segments"
-        description="Reusable user groups for targeting rules. Segments apply to every environment, so only admins can change them."
+        description="Reusable user groups for targeting rules. They apply in every environment, so only admins can change them."
         actions={<Button variant="primary" disabled={!canEdit} onClick={() => setEditing('new')}><Plus className="size-4" /> New segment</Button>}
       />
       {segments.error ? <ErrorState error={segments.error} onRetry={segments.reload} />

@@ -11,40 +11,40 @@ export function FlagInspector() {
   const active = results.filter((r) => r.reason !== 'FLAG_ARCHIVED');
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2">
+    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 font-sans">
       {open && (
-        <div className="flex max-h-[70vh] w-[min(24rem,calc(100vw-2rem))] animate-slide-up flex-col overflow-hidden rounded-xl border border-stone-700 bg-stone-900 text-stone-200 shadow-2xl">
-          <div className="flex items-start justify-between gap-3 border-b border-stone-800 px-4 py-3">
+        <div className="flex max-h-[70vh] w-[min(24rem,calc(100vw-2rem))] animate-slide-up flex-col overflow-hidden rounded-xl border border-line-strong bg-surface text-fg shadow-2xl">
+          <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
             <div>
-              <p className="text-sm font-medium text-stone-100">Flag inspector</p>
-              <p className="text-xs text-stone-400">
+              <p className="text-sm font-medium text-fg">Flag inspector</p>
+              <p className="text-xs text-muted">
                 {user.name} · {ENVIRONMENT_LABELS[environment]}
               </p>
             </div>
-            <button type="button" onClick={() => setOpen(false)} aria-label="Close flag inspector" className="rounded p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-100">
+            <button type="button" onClick={() => setOpen(false)} aria-label="Close flag inspector" className="rounded p-1 text-muted hover:bg-raised hover:text-fg">
               <X className="size-4" />
             </button>
           </div>
-          <ul className="divide-y divide-stone-800 overflow-y-auto">
+          <ul className="divide-y divide-line overflow-y-auto">
             {results.map((r) => (
               <li key={r.flagKey} className="px-4 py-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <code className="truncate font-mono text-xs text-stone-100">{r.flagKey}</code>
+                  <code className="truncate font-mono text-xs text-fg">{r.flagKey}</code>
                   <span className="flex shrink-0 items-center gap-1.5">
-                    {r.variant && <code className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-[11px] text-stone-300">{r.variant}</code>}
+                    {r.variant && <code className="rounded bg-raised px-1.5 py-0.5 font-mono text-[11px] text-muted">{r.variant}</code>}
                     <span
-                      className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${r.enabled ? 'bg-emerald-400/15 text-emerald-300' : 'bg-stone-700/60 text-stone-400'}`}
+                      className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${r.enabled ? 'bg-on/15 text-on' : 'bg-raised text-muted'}`}
                     >
                       {r.enabled ? 'ON' : 'OFF'}
                     </span>
                   </span>
                 </div>
-                <p className="mt-1 text-[11px] leading-relaxed text-stone-400">
-                  <span className="font-mono text-stone-500">{r.reason}</span> · {r.explanation}
+                <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                  <span className="font-mono text-faint">{r.reason}</span> · {r.explanation}
                 </p>
               </li>
             ))}
-            {results.length === 0 && <li className="px-4 py-6 text-center text-xs text-stone-400">No evaluations available.</li>}
+            {results.length === 0 && <li className="px-4 py-6 text-center text-xs text-muted">No evaluations available.</li>}
           </ul>
         </div>
       )}
@@ -52,11 +52,11 @@ export function FlagInspector() {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="inline-flex items-center gap-2 rounded-full border border-stone-700 bg-stone-900 px-4 py-2 text-xs font-medium text-stone-100 shadow-lg transition hover:bg-stone-800"
+        className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-surface px-4 py-2 text-xs font-medium text-fg shadow-lg transition hover:bg-raised"
       >
-        <Flag className="size-3.5 text-emerald-400" />
+        <Flag className="size-3.5 text-on" />
         Flags
-        <span className="rounded-full bg-stone-700 px-1.5 text-[10px] text-stone-300">
+        <span className="rounded-full bg-line-strong px-1.5 text-[10px] text-muted">
           {active.filter((r) => r.enabled).length}/{active.length}
         </span>
       </button>

@@ -12,7 +12,7 @@ import { FlagInspector } from './FlagInspector';
 /** Light Nordic brand shell; deliberately independent of the dark dashboard theme. */
 export function StoreShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col overflow-x-clip bg-stone-50 text-stone-900 [color-scheme:light]">
+    <div className="flex min-h-screen flex-col overflow-x-clip bg-stone-50 font-store text-stone-900 [color-scheme:light]">
       <DemoBanner />
       {children}
     </div>
