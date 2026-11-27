@@ -1,13 +1,13 @@
-import type { Environment } from '@flagship/shared';
-import { ENVIRONMENT_LABELS } from '@flagship/shared';
-import { CircleAlert, LoaderCircle, X } from 'lucide-react';
+import { ENVIRONMENT_LABELS, ENVIRONMENTS, type Environment, type FlagWithConfigs } from '@flagship/shared';
+import { ChevronRight, CircleAlert, LoaderCircle, X } from 'lucide-react';
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { servingSummary } from '../lib/describe';
 
 export const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(' ');
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 const BUTTON_STYLES: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-[#0b0e1a] hover:bg-accent-strong font-semibold',
+  primary: 'bg-primary text-on-primary hover:bg-primary-strong font-semibold',
   secondary: 'bg-raised text-fg border border-line-strong hover:border-faint',
   ghost: 'text-muted hover:text-fg hover:bg-raised',
   danger: 'bg-danger/10 text-danger border border-danger/30 hover:bg-danger/20',
@@ -83,8 +83,8 @@ export function Panel({ title, actions, children, className, bodyClassName }: {
   return (
     <section className={cx('rounded-lg border border-line bg-surface', className)}>
       {(title || actions) && (
-        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-          <h2 className="text-[13px] font-semibold text-fg">{title}</h2>
+        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <h2 className="text-sm font-semibold text-fg">{title}</h2>
           {actions}
         </header>
       )}
@@ -96,8 +96,9 @@ export function Panel({ title, actions, children, className, bodyClassName }: {
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+      {/* Takes the row's free width, so the description only wraps when it reaches the actions. */}
+      <div className="min-w-0 flex-1 basis-80">
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {description && <p className="mt-1 text-sm text-muted">{description}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
@@ -108,6 +109,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
 const ENV_DOT: Record<Environment, string> = { development: 'bg-dev', staging: 'bg-staging', production: 'bg-prod' };
 const ENV_TEXT: Record<Environment, string> = { development: 'text-dev', staging: 'text-staging', production: 'text-prod' };
 export const envTextClass = (env: Environment) => ENV_TEXT[env];
+export const envDotClass = (env: Environment) => ENV_DOT[env];
 export const ENV_SHORT_LABELS: Record<Environment, string> = { development: 'Dev', staging: 'Stag', production: 'Prod' };
 
 export const EnvLabel = ({ env, short }: { env: Environment; short?: boolean }) => (
@@ -128,10 +130,57 @@ export function Badge({ children, tone = 'neutral', className }: { children: Rea
   return <span className={cx('inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-px text-[11px] font-medium', tones[tone], className)}>{children}</span>;
 }
 
+/**
+ * A flag's state in every environment as one strip of three cells: on (with its rollout or split) or off.
+ * The dashboard's signature element; `highlight` marks the environment a list is filtered to.
+ */
+export function EnvStrip({ flag, highlight }: { flag: FlagWithConfigs; highlight?: Environment | '' }) {
+  return (
+    <div className="inline-grid grid-cols-3 overflow-hidden rounded-md border border-line">
+      {ENVIRONMENTS.map((env) => {
+        const config = flag.environments[env];
+        const on = config.enabled && flag.status === 'active';
+        const summary = on ? servingSummary(config) : null;
+        return (
+          <span
+            key={env}
+            title={`${ENVIRONMENT_LABELS[env]}: ${on ? summary ?? 'on' : 'off'}`}
+            className={cx(
+              'relative flex h-7 w-20 items-center justify-center border-l border-line px-1 text-[11px] font-medium tabular-nums first:border-l-0',
+              on ? 'bg-on/10 text-on' : 'text-faint',
+              highlight === env && 'ring-1 ring-inset ring-accent/60',
+            )}
+          >
+            <span className={cx('absolute inset-x-0 top-0 h-0.5', ENV_DOT[env], !on && 'opacity-30')} />
+            <span className="sr-only">{ENVIRONMENT_LABELS[env]}: </span>
+            <span className="truncate">{on ? summary ?? 'On' : 'Off'}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Collapsible section for content that isn't needed every time (native <details>, so keyboard and screen readers work). */
+export function Fold({ title, summary, open, children, className, summaryClassName = 'px-4 py-3' }: {
+  title: ReactNode; summary?: ReactNode; open?: boolean; children: ReactNode; className?: string; summaryClassName?: string;
+}) {
+  return (
+    <details open={open} className={cx('group', className)}>
+      <summary className={cx('flex cursor-pointer list-none items-center gap-2 select-none hover:text-fg [&::-webkit-details-marker]:hidden', summaryClassName)}>
+        <ChevronRight className="size-3.5 shrink-0 text-faint transition-transform group-open:rotate-90" />
+        <span className="text-sm font-semibold">{title}</span>
+        {summary && <span className={cx('ml-auto min-w-0 pl-3 text-xs text-faint', typeof summary === 'string' && 'truncate')}>{summary}</span>}
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 /** Compact on/off pill used in tables. */
 export const StatusPill = ({ on, label }: { on: boolean; label?: string }) => (
   <span className={cx('inline-flex items-center gap-1.5 text-xs font-medium', on ? 'text-on' : 'text-faint')}>
-    <span className={cx('size-1.5 rounded-full', on ? 'bg-on shadow-[0_0_6px] shadow-on/60' : 'bg-faint')} />
+    <span className={cx('size-1.5 rounded-full', on ? 'bg-on' : 'bg-faint')} />
     {label ?? (on ? 'On' : 'Off')}
   </span>
 );

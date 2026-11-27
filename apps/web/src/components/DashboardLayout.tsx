@@ -25,10 +25,10 @@ function IdentitySwitcher() {
   const { actors, actor, setActor, productionReadOnly } = useActor();
   if (!actor) return null;
   return (
-    <div className="space-y-2 rounded-lg border border-line bg-canvas/60 p-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-faint">Acting as</span>
-        <span className={cx('text-[11px] font-semibold', ROLE_TONE[actor.role])}>{ROLE_LABELS[actor.role]}</span>
+    <div className="space-y-2 border-t border-line px-1 pt-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs text-faint">Acting as</span>
+        <span className={cx('text-xs font-medium', ROLE_TONE[actor.role])}>{ROLE_LABELS[actor.role]}</span>
       </div>
       <select
         value={actor.id}
@@ -40,11 +40,11 @@ function IdentitySwitcher() {
           <option key={a.id} value={a.id}>{a.name} — {ROLE_LABELS[a.role]}</option>
         ))}
       </select>
-      <div className="flex flex-wrap gap-x-2.5 gap-y-1">
-        <span className="text-[11px] text-faint">Can edit</span>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <span className="text-xs text-faint">Can edit</span>
         {ROLE_ENVIRONMENTS[actor.role].filter((env) => !(productionReadOnly && env === 'production')).map((env) => <EnvLabel key={env} env={env} short />)}
       </div>
-      <p className="text-[11px] leading-snug text-faint">Simulated identity for demo purposes. No real authentication.</p>
+      <p className="text-xs text-faint">A simulated demo identity; there is no sign-in.</p>
     </div>
   );
 }
@@ -53,8 +53,8 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col gap-6 p-4">
       <div className="flex items-center gap-2 px-1.5">
-        <Logo className="size-7" />
-        <span className="font-semibold tracking-tight">Flagship</span>
+        <Logo className="size-6" />
+        <span className="text-[15px] font-semibold tracking-tight">Flagship</span>
       </div>
       <nav className="flex flex-col gap-0.5">
         {NAV.map(({ to, label, icon: Icon, end }) => (
@@ -65,7 +65,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             onClick={onNavigate}
             className={({ isActive }) => cx(
               'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
-              isActive ? 'bg-raised text-fg' : 'text-muted hover:bg-raised/60 hover:text-fg',
+              isActive ? 'bg-raised font-medium text-fg' : 'text-muted hover:bg-raised/60 hover:text-fg',
             )}
           >
             <Icon className="size-4" /> {label}
@@ -149,7 +149,7 @@ export function DashboardLayout() {
   return (
     // The grid only applies from `lg` up; below that the sidebar is a slide-in menu.
     <div className="min-h-screen lg:grid" style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}>
-      <aside className="sticky top-0 hidden h-screen border-r border-line bg-surface/50 lg:block">
+      <aside className="sticky top-0 hidden h-screen border-r border-line bg-surface lg:block">
         <Sidebar />
         <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
       </aside>
